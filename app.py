@@ -18,7 +18,7 @@ st.set_page_config(
     page_title="SSD Flood Early Warning",
     page_icon="📡",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="auto",
 )
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -201,6 +201,13 @@ section[data-testid="stSidebar"] .stSlider [data-testid="stTickBarMax"] {{
     margin-bottom: 1.4rem; color: white;
     box-shadow: 0 4px 24px rgba(13,31,60,.3);
 }}
+.ph-inner {{
+    display: flex; align-items: flex-start;
+    justify-content: space-between; gap: 1rem;
+}}
+.ph-left  {{ flex: 1 1 auto; min-width: 0; }}
+.ph-right {{ flex: 0 0 auto; text-align: right; min-width: 130px; }}
+.ph-badges {{ margin-top: 0.8rem; display: flex; flex-wrap: wrap; gap: 0.3rem; }}
 .page-header h1 {{ margin:0; font-size:1.6rem; font-weight:800; color:white;
                    letter-spacing:-.02em; }}
 .page-header p  {{ margin:0.3rem 0 0; font-size:0.84rem; color:#93C5FD; }}
@@ -209,7 +216,7 @@ section[data-testid="stSidebar"] .stSlider [data-testid="stTickBarMax"] {{
     background:rgba(255,255,255,.12); backdrop-filter:blur(4px);
     border:1px solid rgba(255,255,255,.2); color:white;
     border-radius:20px; padding:3px 12px; font-size:0.72rem;
-    font-weight:600; margin:0.7rem 0.25rem 0 0; letter-spacing:.02em;
+    font-weight:600; letter-spacing:.02em;
 }}
 
 /* ── Model result cards ──────────────────────────── */
@@ -236,6 +243,109 @@ section[data-testid="stSidebar"] .stSlider [data-testid="stTickBarMax"] {{
 
 /* ── Hide Streamlit chrome ───────────────────────── */
 #MainMenu, footer {{ visibility: hidden; }}
+
+/* ══════════════════════════════════════════════════
+   RESPONSIVE — tablet  (≤ 1024 px)
+══════════════════════════════════════════════════ */
+@media (max-width: 1024px) {{
+    .block-container {{ padding: 1.2rem 1.5rem 3rem !important; }}
+    .page-header {{ padding: 1.4rem 1.5rem 1.2rem; }}
+    .page-header h1 {{ font-size: 1.3rem; }}
+    .kpi-val {{ font-size: 1.65rem; }}
+    .v-prob  {{ font-size: 2.6rem; }}
+    .model-auc {{ font-size: 1.7rem; }}
+    .stTabs [data-baseweb="tab"] {{ padding: 0.45rem 1rem; font-size: 0.82rem; }}
+}}
+
+/* ══════════════════════════════════════════════════
+   RESPONSIVE — mobile  (≤ 768 px)
+══════════════════════════════════════════════════ */
+@media (max-width: 768px) {{
+    /* Container */
+    .block-container {{ padding: 0.8rem 0.8rem 3rem !important; }}
+
+    /* Page header — stack vertically */
+    .page-header {{
+        padding: 1rem 1.1rem 0.9rem;
+        border-radius: 12px;
+        margin-bottom: 1rem;
+    }}
+    .ph-inner  {{ flex-direction: column; gap: 0.6rem; }}
+    .ph-right  {{ display: none; }}         /* AUC block already in badge */
+    .ph-left   {{ width: 100%; }}
+    .ph-badges {{ gap: 0.25rem; margin-top: 0.6rem; }}
+    .page-header h1 {{ font-size: 1.05rem; letter-spacing: -.01em; }}
+    .page-header p  {{ font-size: 0.74rem; }}
+    .ph-badge {{ font-size: 0.65rem; padding: 2px 8px; }}
+
+    /* Tabs — horizontal scroll, no wrap */
+    .stTabs [data-baseweb="tab-list"] {{
+        padding: 3px; gap: 2px; overflow-x: auto;
+        flex-wrap: nowrap; border-radius: 10px;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }}
+    .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar {{ display: none; }}
+    .stTabs [data-baseweb="tab"] {{
+        padding: 0.38rem 0.7rem; font-size: 0.74rem;
+        white-space: nowrap; flex-shrink: 0;
+    }}
+
+    /* KPI cards — 2×2 grid on mobile */
+    [data-testid="stHorizontalBlock"] {{
+        flex-wrap: wrap !important;
+        gap: 0.5rem !important;
+    }}
+    [data-testid="stHorizontalBlock"] > [data-testid="column"] {{
+        flex: 1 1 calc(50% - 0.5rem) !important;
+        min-width: calc(50% - 0.5rem) !important;
+        max-width: calc(50% - 0.5rem) !important;
+        width: calc(50% - 0.5rem) !important;
+    }}
+
+    /* Cards */
+    .card {{ padding: 0.9rem 1rem; border-radius: 10px; }}
+    .card-title {{ font-size: 0.66rem; }}
+
+    /* KPI strip */
+    .kpi {{ padding: 0.8rem 0.75rem; border-radius: 10px; }}
+    .kpi-val {{ font-size: 1.35rem; }}
+    .kpi-lbl {{ font-size: 0.65rem; }}
+    .kpi-sub {{ font-size: 0.62rem; }}
+
+    /* Verdict */
+    .verdict-wrap {{ padding: 1.2rem 1rem; border-radius: 10px; }}
+    .v-prob {{ font-size: 2.1rem; }}
+    .v-risk {{ font-size: 0.9rem; }}
+    .v-label {{ font-size: 0.64rem; }}
+    .v-dec  {{ font-size: 0.69rem; }}
+
+    /* Alert boxes */
+    .abox {{ font-size: 0.79rem; padding: 0.65rem 0.85rem; }}
+
+    /* Model cards */
+    .model-card {{ padding: 0.85rem 0.9rem; border-radius: 10px; }}
+    .model-auc  {{ font-size: 1.45rem; }}
+    .model-metric-row {{ font-size: 0.73rem; }}
+
+    /* Data tables — horizontal scroll */
+    .stDataFrame {{ overflow-x: auto !important; }}
+    .stDataFrame table {{ min-width: 480px; }}
+}}
+
+/* ══════════════════════════════════════════════════
+   RESPONSIVE — small mobile  (≤ 480 px)
+══════════════════════════════════════════════════ */
+@media (max-width: 480px) {{
+    .block-container {{ padding: 0.6rem 0.5rem 3rem !important; }}
+    .page-header h1 {{ font-size: 0.98rem; }}
+    .page-header {{ padding: 0.85rem 0.9rem 0.8rem; }}
+    .kpi-val {{ font-size: 1.25rem; }}
+    .v-prob  {{ font-size: 1.9rem; }}
+    .stTabs [data-baseweb="tab"] {{ padding: 0.35rem 0.6rem; font-size: 0.72rem; }}
+    .model-auc {{ font-size: 1.3rem; }}
+    .card {{ padding: 0.8rem 0.75rem; }}
+}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -667,8 +777,8 @@ hist_events = int(crow["flood_events"].iloc[0])   if not crow.empty else 0
 _lr_auc_hdr = meta['test_metrics'][meta['best_model_name']]['auc_roc']
 st.markdown(f"""
 <div class="page-header">
-  <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:1rem">
-    <div>
+  <div class="ph-inner">
+    <div class="ph-left">
       <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:.14em;
                   color:#93C5FD;font-weight:700;margin-bottom:6px">
         ◆ Early Warning System · South Sudan
@@ -676,14 +786,14 @@ st.markdown(f"""
       <h1>County-Level Flood Prediction</h1>
       <p>Machine learning · 79 counties · 2011–2025 · Viewing:
          <b style="color:white">{sel_county}</b>, {MONTH_NAMES[sel_month-1]}</p>
-      <div style="margin-top:0.8rem">
+      <div class="ph-badges">
         <span class="ph-badge">Logistic Regression</span>
         <span class="ph-badge">AUC-ROC {_lr_auc_hdr}</span>
         <span class="ph-badge">79 Counties</span>
-        <span class="ph-badge">5-Fold Temporal CV</span>
+        <span class="ph-badge">5-Fold CV</span>
       </div>
     </div>
-    <div style="text-align:right;min-width:140px">
+    <div class="ph-right">
       <div style="font-size:0.68rem;color:#93C5FD;text-transform:uppercase;
                   letter-spacing:.08em;font-weight:600">Model AUC-ROC</div>
       <div style="font-size:3rem;font-weight:800;color:white;line-height:1;
