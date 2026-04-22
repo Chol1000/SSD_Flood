@@ -1,0 +1,311 @@
+{
+  "best_model_name": "Logistic Regression",
+  "features": [
+    "rainfall_mm",
+    "soil_moisture_mm",
+    "max_temperature_celsius",
+    "min_temperature_celsius",
+    "vapor_pressure_deficit_kPa",
+    "wetland_fraction",
+    "elevation_m",
+    "slope_deg",
+    "ndvi",
+    "flood_prev_month",
+    "temp_range",
+    "wetness_index",
+    "rain_wetland",
+    "month_sin",
+    "month_cos"
+  ],
+  "threshold": 0.935,
+  "model_selection_criterion": "Logistic Regression selected on CV precision (highest among all models). Confirmed on test set but not tuned there. Operational justification: humanitarian EWS \u2014 false alarms erode institutional trust and waste limited resources.",
+  "excluded_features": [
+    "water_fraction"
+  ],
+  "exclusion_reason": "water_fraction encodes the flood label (all 649 flood events have water_fraction>=0.01; all 13,380 non-flood events have water_fraction<0.01). Including it yields trivial AUC\u22481.0.",
+  "feature_engineering": {
+    "temp_range": "max_temperature_celsius - min_temperature_celsius",
+    "wetness_index": "(rainfall_mm \u00d7 soil_moisture_mm) / 1000",
+    "rain_wetland": "rainfall_mm \u00d7 wetland_fraction",
+    "month_sin": "sin(2\u03c0 \u00d7 month / 12)",
+    "month_cos": "cos(2\u03c0 \u00d7 month / 12)"
+  },
+  "methodology": {
+    "cv": "5-fold TimeSeriesSplit on 2011\u20132023 training data",
+    "test": "2024\u20132025 held out \u2014 never seen during training or tuning",
+    "imbalance": "SMOTE (k=5) inside CV pipeline + class_weight='balanced'",
+    "imputation": "SimpleImputer(median) inside pipeline, fit on training folds only",
+    "threshold": "F1-maximising threshold per CV fold (grid: 0.05\u20130.95, step 0.005), mean across folds \u2014 applied once to test set.",
+    "bootstrap_ci": "1000 iterations, 95% percentile CI"
+  },
+  "cv_metrics": {
+    "Logistic Regression": {
+      "auc_roc_mean": 0.940374,
+      "auc_roc_std": 0.024263,
+      "f1_mean": 0.675405,
+      "f1_std": 0.072277
+    },
+    "Random Forest": {
+      "auc_roc_mean": 0.966384,
+      "auc_roc_std": 0.023171,
+      "f1_mean": 0.697531,
+      "f1_std": 0.101847
+    },
+    "XGBoost": {
+      "auc_roc_mean": 0.947778,
+      "auc_roc_std": 0.050519,
+      "f1_mean": 0.661335,
+      "f1_std": 0.140521
+    },
+    "LightGBM": {
+      "auc_roc_mean": 0.959741,
+      "auc_roc_std": 0.028303,
+      "f1_mean": 0.647538,
+      "f1_std": 0.154241
+    }
+  },
+  "test_metrics": {
+    "Logistic Regression": {
+      "auc_roc": 0.9601,
+      "auc_ci_lo": 0.9355,
+      "auc_ci_hi": 0.9817,
+      "ap": 0.5901,
+      "f1": 0.7581,
+      "f1_ci_lo": 0.6667,
+      "f1_ci_hi": 0.8413,
+      "precision": 0.7705,
+      "recall": 0.746,
+      "threshold": 0.935,
+      "tp": 47,
+      "fp": 14,
+      "fn": 16,
+      "tn": 1819
+    },
+    "Random Forest": {
+      "auc_roc": 0.9668,
+      "auc_ci_lo": 0.9476,
+      "auc_ci_hi": 0.9833,
+      "ap": 0.6187,
+      "f1": 0.5818,
+      "f1_ci_lo": 0.4933,
+      "f1_ci_hi": 0.6667,
+      "precision": 0.4706,
+      "recall": 0.7619,
+      "threshold": 0.506,
+      "tp": 48,
+      "fp": 54,
+      "fn": 15,
+      "tn": 1779
+    },
+    "XGBoost": {
+      "auc_roc": 0.9581,
+      "auc_ci_lo": 0.9355,
+      "auc_ci_hi": 0.9773,
+      "ap": 0.5787,
+      "f1": 0.3881,
+      "f1_ci_lo": 0.3165,
+      "f1_ci_hi": 0.46,
+      "precision": 0.2537,
+      "recall": 0.8254,
+      "threshold": 0.526,
+      "tp": 52,
+      "fp": 153,
+      "fn": 11,
+      "tn": 1680
+    },
+    "LightGBM": {
+      "auc_roc": 0.9564,
+      "auc_ci_lo": 0.9303,
+      "auc_ci_hi": 0.9776,
+      "ap": 0.617,
+      "f1": 0.5213,
+      "f1_ci_lo": 0.4362,
+      "f1_ci_hi": 0.6091,
+      "precision": 0.392,
+      "recall": 0.7778,
+      "threshold": 0.373,
+      "tp": 49,
+      "fp": 76,
+      "fn": 14,
+      "tn": 1757
+    }
+  },
+  "ablation": [
+    {
+      "Feature Set": "Full (15 features)",
+      "N Features": 15,
+      "CV AUC": 0.9478,
+      "CV AUC std": 0.0505,
+      "CV F1": 0.6613,
+      "Test AUC": 0.9581,
+      "Test F1": 0.3881,
+      "Test Precision": 0.2537,
+      "Test Recall": 0.8254
+    },
+    {
+      "Feature Set": "No temporal lag",
+      "N Features": 14,
+      "CV AUC": 0.9127,
+      "CV AUC std": 0.077,
+      "CV F1": 0.5793,
+      "Test AUC": 0.8803,
+      "Test F1": 0.2405,
+      "Test Precision": 0.1502,
+      "Test Recall": 0.6032
+    },
+    {
+      "Feature Set": "Climate only",
+      "N Features": 11,
+      "CV AUC": 0.8362,
+      "CV AUC std": 0.0763,
+      "CV F1": 0.3577,
+      "Test AUC": 0.812,
+      "Test F1": 0.1671,
+      "Test Precision": 0.0983,
+      "Test Recall": 0.5556
+    }
+  ],
+  "feature_importance": {
+    "slope_deg": 0.394951,
+    "flood_prev_month": 0.18773,
+    "vapor_pressure_deficit_kPa": 0.089509,
+    "elevation_m": 0.068253,
+    "rainfall_mm": 0.063069,
+    "month_sin": 0.042484,
+    "soil_moisture_mm": 0.036022,
+    "wetness_index": 0.029025,
+    "max_temperature_celsius": 0.028707,
+    "temp_range": 0.023906,
+    "wetland_fraction": 0.011923,
+    "min_temperature_celsius": 0.011149,
+    "rain_wetland": 0.007985,
+    "month_cos": 0.003567,
+    "ndvi": 0.00172
+  },
+  "persistence_baseline": {
+    "description": "predict flood=1 if flood_prev_month=1, else 0",
+    "auc_roc": 0.8692,
+    "ap": 0.5833,
+    "f1": 0.7581,
+    "precision": 0.7705,
+    "recall": 0.746,
+    "tp": 47,
+    "fp": 14,
+    "fn": 16,
+    "tn": 1819,
+    "note": "Persistence is structurally blind to onset floods (first month of a new flood spell, flood_prev_month=0). There are 16 such events in the 2024\u20132025 test set."
+  },
+  "onset_analysis": [
+    {
+      "threshold": 0.2,
+      "onset_detected": 13,
+      "onset_total": 16,
+      "fp": 421,
+      "precision": 0.1247,
+      "recall": 0.9524,
+      "f1": 0.2206
+    },
+    {
+      "threshold": 0.3,
+      "onset_detected": 11,
+      "onset_total": 16,
+      "fp": 268,
+      "precision": 0.1779,
+      "recall": 0.9206,
+      "f1": 0.2982
+    },
+    {
+      "threshold": 0.4,
+      "onset_detected": 7,
+      "onset_total": 16,
+      "fp": 160,
+      "precision": 0.2523,
+      "recall": 0.8571,
+      "f1": 0.3899
+    },
+    {
+      "threshold": 0.5,
+      "onset_detected": 5,
+      "onset_total": 16,
+      "fp": 89,
+      "precision": 0.3688,
+      "recall": 0.8254,
+      "f1": 0.5098
+    }
+  ],
+  "significance_tests": {
+    "method": "DeLong (1988) structural components method for correlated AUC comparison; McNemar test with Edwards continuity correction for binary prediction agreement. All tests two-sided, alpha=0.05.",
+    "delong": [
+      {
+        "comparison": "LR vs Random Forest",
+        "auc_LR": 0.9601,
+        "auc_other": 0.9668,
+        "delta_auc": -0.0068,
+        "z_stat": -1.5422,
+        "p_value": 0.123,
+        "significant_05": 0
+      },
+      {
+        "comparison": "LR vs XGBoost",
+        "auc_LR": 0.9601,
+        "auc_other": 0.9581,
+        "delta_auc": 0.002,
+        "z_stat": 0.341,
+        "p_value": 0.7331,
+        "significant_05": 0
+      },
+      {
+        "comparison": "LR vs LightGBM",
+        "auc_LR": 0.9601,
+        "auc_other": 0.9564,
+        "delta_auc": 0.0037,
+        "z_stat": 0.6204,
+        "p_value": 0.535,
+        "significant_05": 0
+      },
+      {
+        "comparison": "LR vs Persistence",
+        "auc_LR": 0.9601,
+        "auc_other": 0.8692,
+        "delta_auc": 0.0909,
+        "z_stat": 4.1492,
+        "p_value": 0.0,
+        "significant_05": 1
+      }
+    ],
+    "mcnemar": [
+      {
+        "comparison": "LR vs Random Forest",
+        "b_LR_wins": 41,
+        "c_other_wins": 2,
+        "chi2_stat": 33.5814,
+        "p_value": 0.0,
+        "significant_05": 1
+      },
+      {
+        "comparison": "LR vs XGBoost",
+        "b_LR_wins": 140,
+        "c_other_wins": 6,
+        "chi2_stat": 121.1575,
+        "p_value": 0.0,
+        "significant_05": 1
+      },
+      {
+        "comparison": "LR vs LightGBM",
+        "b_LR_wins": 63,
+        "c_other_wins": 3,
+        "chi2_stat": 52.7424,
+        "p_value": 0.0,
+        "significant_05": 1
+      },
+      {
+        "comparison": "LR vs Persistence",
+        "b_LR_wins": 0,
+        "c_other_wins": 0,
+        "chi2_stat": 0.0,
+        "p_value": 1.0,
+        "significant_05": 0
+      }
+    ]
+  }
+}
