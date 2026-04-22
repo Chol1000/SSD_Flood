@@ -4,7 +4,8 @@
 
 > **Author:** Chol Atem Giet Monykuch · [c.monykuch@alustudent.com](mailto:c.monykuch@alustudent.com) · African Leadership University  
 > **Model:** Logistic Regression · AUC-ROC = 0.9601 (95% CI: 0.935–0.982) · F1 = 0.7581 · Precision = 0.7705 · Recall = 0.7460  
-> **Live App:** *(coming soon — Streamlit Community Cloud)*
+> **Live App:** [https://ssd-flood.streamlit.app](https://ssd-flood.streamlit.app)  
+> **Source Code:** [https://github.com/Chol1000/SSD_Flood](https://github.com/Chol1000/SSD_Flood)
 
 ---
 
@@ -13,6 +14,23 @@
 South Sudan experiences catastrophic annual flooding driven by the Nile river system and the Sudd — the world's largest tropical wetland. Since 2019, flooding has displaced over one million people annually, yet no systematic county-level predictive early warning system exists.
 
 This project presents the **first machine learning flood prediction framework covering all 79 South Sudan counties**, trained on 14,220 county-month satellite observations spanning 15 years (2011–2025). The system produces calibrated flood risk probabilities at county-month granularity and is deployed as a real-time interactive web application.
+
+---
+
+## Live Demo
+
+**[https://ssd-flood.streamlit.app](https://ssd-flood.streamlit.app)**
+
+The deployed early warning application provides four interactive views:
+
+| Tab | What it does |
+|---|---|
+| **Flood Risk Prediction** | Select any of the 79 counties — climate inputs auto-fill with historical medians. Adjust sliders to current or forecast conditions and click **Predict** to get a calibrated flood probability and alert level (Critical / High / Moderate / Low). |
+| **County Risk Map** | Choropleth bar chart showing historical flood rates across all 79 counties, colour-coded by risk tier. Identifies the most structurally vulnerable counties at a glance. |
+| **Historical Analysis** | Per-county monthly flood time series from 2011 to 2025. Select a county to see its full flood history alongside seasonal and annual trend breakdowns. |
+| **Model Performance** | Full transparency panel — test-set metrics, confusion matrices, ROC/PR curves, feature importance, ablation results, and the persistence baseline comparison. |
+
+> The app runs on Streamlit Community Cloud (free tier). If it shows a **"This app is sleeping"** screen, click **Wake up** and it will be ready within 30 seconds.
 
 ---
 
