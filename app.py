@@ -208,6 +208,11 @@ section[data-testid="stSidebar"] .stSlider [data-testid="stTickBarMax"] {{
 .ph-left  {{ flex: 1 1 auto; min-width: 0; }}
 .ph-right {{ flex: 0 0 auto; text-align: right; min-width: 130px; }}
 .ph-badges {{ margin-top: 0.8rem; display: flex; flex-wrap: wrap; gap: 0.3rem; }}
+.ph-eyebrow {{
+    font-size: 0.72rem; text-transform: uppercase; letter-spacing: .1em;
+    color: #93C5FD; font-weight: 700; margin-bottom: 6px;
+    white-space: nowrap; overflow: visible;
+}}
 .page-header h1 {{ margin:0; font-size:1.6rem; font-weight:800; color:white;
                    letter-spacing:-.02em; }}
 .page-header p  {{ margin:0.3rem 0 0; font-size:0.84rem; color:#93C5FD; }}
@@ -261,8 +266,8 @@ section[data-testid="stSidebar"] .stSlider [data-testid="stTickBarMax"] {{
    RESPONSIVE — mobile  (≤ 768 px)
 ══════════════════════════════════════════════════ */
 @media (max-width: 768px) {{
-    /* Container */
-    .block-container {{ padding: 0.8rem 0.8rem 3rem !important; }}
+    /* Container — enough top padding to clear Streamlit's toolbar */
+    .block-container {{ padding: 4rem 0.8rem 3rem !important; }}
 
     /* Page header — stack vertically */
     .page-header {{
@@ -270,13 +275,24 @@ section[data-testid="stSidebar"] .stSlider [data-testid="stTickBarMax"] {{
         border-radius: 12px;
         margin-bottom: 1rem;
     }}
-    .ph-inner  {{ flex-direction: column; gap: 0.6rem; }}
-    .ph-right  {{ display: none; }}         /* AUC block already in badge */
+    .ph-inner  {{ flex-direction: column; gap: 0.75rem; }}
+    .ph-right  {{
+        display: flex; flex-direction: row; align-items: center;
+        text-align: left; min-width: unset; gap: 1rem;
+        background: rgba(255,255,255,.07); border-radius: 10px;
+        padding: 0.6rem 1rem; width: 100%;
+    }}
+    .ph-right > div:first-child {{ flex: 1; }}
     .ph-left   {{ width: 100%; }}
     .ph-badges {{ gap: 0.25rem; margin-top: 0.6rem; }}
+    .ph-eyebrow {{
+        font-size: 0.78rem; letter-spacing: .04em;
+        color: white; white-space: normal;
+    }}
     .page-header h1 {{ font-size: 1.05rem; letter-spacing: -.01em; }}
     .page-header p  {{ font-size: 0.74rem; }}
     .ph-badge {{ font-size: 0.65rem; padding: 2px 8px; }}
+    .ph-right div[style*="2.6rem"] {{ font-size: 2rem !important; }}
 
     /* Tabs — horizontal scroll, no wrap */
     .stTabs [data-baseweb="tab-list"] {{
@@ -337,7 +353,7 @@ section[data-testid="stSidebar"] .stSlider [data-testid="stTickBarMax"] {{
    RESPONSIVE — small mobile  (≤ 480 px)
 ══════════════════════════════════════════════════ */
 @media (max-width: 480px) {{
-    .block-container {{ padding: 0.6rem 0.5rem 3rem !important; }}
+    .block-container {{ padding: 4rem 0.5rem 3rem !important; }}
     .page-header h1 {{ font-size: 0.98rem; }}
     .page-header {{ padding: 0.85rem 0.9rem 0.8rem; }}
     .kpi-val {{ font-size: 1.25rem; }}
@@ -779,8 +795,7 @@ st.markdown(f"""
 <div class="page-header">
   <div class="ph-inner">
     <div class="ph-left">
-      <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:.14em;
-                  color:#93C5FD;font-weight:700;margin-bottom:6px">
+      <div class="ph-eyebrow">
         ◆ Early Warning System · South Sudan
       </div>
       <h1>County-Level Flood Prediction</h1>
@@ -794,13 +809,15 @@ st.markdown(f"""
       </div>
     </div>
     <div class="ph-right">
-      <div style="font-size:0.68rem;color:#93C5FD;text-transform:uppercase;
-                  letter-spacing:.08em;font-weight:600">Model AUC-ROC</div>
-      <div style="font-size:3rem;font-weight:800;color:white;line-height:1;
-                  letter-spacing:-.03em">{_lr_auc_hdr}</div>
-      <div style="font-size:0.72rem;color:#93C5FD;margin-top:4px">
-        Hold-out test 2024–2025
+      <div>
+        <div style="font-size:0.68rem;color:#93C5FD;text-transform:uppercase;
+                    letter-spacing:.08em;font-weight:600">Model AUC-ROC</div>
+        <div style="font-size:0.72rem;color:#93C5FD;margin-top:2px">
+          Hold-out test 2024–2025
+        </div>
       </div>
+      <div style="font-size:2.6rem;font-weight:800;color:white;line-height:1;
+                  letter-spacing:-.03em">{_lr_auc_hdr}</div>
     </div>
   </div>
 </div>
