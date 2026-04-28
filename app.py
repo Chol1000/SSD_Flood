@@ -131,7 +131,6 @@ section[data-testid="stSidebar"] .stSlider [data-testid="stTickBarMax"] {{
     background: transparent !important;
     border-bottom: 3px solid transparent !important;
     margin-bottom: -2px;
-    transition: color 0.15s, border-color 0.15s;
 }}
 .stTabs [data-baseweb="tab"]:hover {{
     color: {TEXT_DARK} !important;
@@ -147,12 +146,8 @@ section[data-testid="stSidebar"] .stSlider [data-testid="stTickBarMax"] {{
 .card {{
     background: {BG_CARD}; border-radius: 14px;
     border: 1px solid {BORDER};
-    box-shadow: 0 1px 3px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.06);
+    box-shadow: 0 2px 8px rgba(0,0,0,.07);
     padding: 1.3rem 1.5rem; margin-bottom: 1rem;
-    transition: box-shadow 0.2s;
-}}
-.card:hover {{
-    box-shadow: 0 4px 6px rgba(0,0,0,.05), 0 10px 30px rgba(0,0,0,.09);
 }}
 .card-title {{
     font-size: 0.72rem; font-weight: 700; letter-spacing: .08em;
@@ -167,7 +162,7 @@ section[data-testid="stSidebar"] .stSlider [data-testid="stTickBarMax"] {{
     border-radius: 12px;
     border: 1px solid {BORDER};
     border-left: 4px solid var(--kpi-color, {BLUE});
-    box-shadow: 0 1px 3px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.06);
+    box-shadow: 0 2px 8px rgba(0,0,0,.07);
     padding: 1.1rem 1.3rem;
     text-align: left;
 }}
@@ -238,7 +233,7 @@ section[data-testid="stSidebar"] .stSlider [data-testid="stTickBarMax"] {{
 .page-header p  {{ margin:0.3rem 0 0; font-size:0.84rem; color:#93C5FD; }}
 .ph-badge {{
     display:inline-flex; align-items:center;
-    background:rgba(255,255,255,.12); backdrop-filter:blur(4px);
+    background:rgba(255,255,255,.15);
     border:1px solid rgba(255,255,255,.2); color:white;
     border-radius:20px; padding:3px 12px; font-size:0.72rem;
     font-weight:600; letter-spacing:.02em;
@@ -249,7 +244,7 @@ section[data-testid="stSidebar"] .stSlider [data-testid="stTickBarMax"] {{
     border-radius: 12px; padding: 1.1rem 1.2rem;
     border: 1.5px solid {BORDER};
     background: {BG_CARD};
-    box-shadow: 0 1px 3px rgba(0,0,0,.04), 0 4px 14px rgba(0,0,0,.06);
+    box-shadow: 0 2px 8px rgba(0,0,0,.07);
     height: 100%; min-height: 220px;
 }}
 .model-card-best {{
@@ -272,7 +267,6 @@ section[data-testid="stSidebar"] .stSlider [data-testid="stTickBarMax"] {{
 }}
 .prob-bar-fill {{
     height: 8px; border-radius: 6px;
-    transition: width 0.3s ease;
 }}
 
 /* ── Prevent horizontal overflow ────────────────── */
@@ -977,7 +971,7 @@ with tab1:
                      font=dict(size=16, color=r_col, family="DM Sans")),
             ],
         )
-        st.plotly_chart(fig_gauge, use_container_width=True, config=dict(displayModeBar=False))
+        st.plotly_chart(fig_gauge, use_container_width=True, config=dict(displayModeBar=False, scrollZoom=False))
 
         # Risk scale legend
         st.markdown(f"""
@@ -1050,7 +1044,7 @@ with tab1:
             paper_bgcolor=BG_CARD, plot_bgcolor=BG_CARD,
             font=dict(family="DM Sans"),
         )
-        st.plotly_chart(fig_fi, use_container_width=True, config=dict(displayModeBar=False))
+        st.plotly_chart(fig_fi, use_container_width=True, config=dict(displayModeBar=False, scrollZoom=False))
 
     with fi_right:
         st.markdown('<div class="card-title">Top Features</div>', unsafe_allow_html=True)
@@ -1147,7 +1141,7 @@ with tab1:
                           showgrid=True, gridcolor="#F2F3F4",
                           tickfont=dict(size=9))
     fig_sens.update_xaxes(showgrid=True, gridcolor="#F2F3F4", tickfont=dict(size=9))
-    st.plotly_chart(fig_sens, use_container_width=True, config=dict(displayModeBar=False))
+    st.plotly_chart(fig_sens, use_container_width=True, config=dict(displayModeBar=False, scrollZoom=False))
     st.markdown(
         f'<div style="font-size:0.75rem;color:{MUTED};margin-top:-0.3rem">'
         f'Each chart sweeps one variable while holding all others at their current sidebar values. '
@@ -1172,7 +1166,7 @@ with tab1:
                          f"{ndvi_val:.2f}",
                          "Yes" if flood_prev else "No"],
         })
-        st.dataframe(inp, hide_index=True, use_container_width=True, height=320)
+        st.dataframe(inp, hide_index=True, use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
     with b2:
@@ -1341,7 +1335,7 @@ with tab2:
             annotations=[dict(text="79<br>counties", x=0.5, y=0.5,
                               font=dict(size=11, color=TEXT_DARK), showarrow=False)],
         )
-        st.plotly_chart(fig_donut, use_container_width=True, config=dict(displayModeBar=False))
+        st.plotly_chart(fig_donut, use_container_width=True, config=dict(displayModeBar=False, scrollZoom=False))
         st.markdown("</div>", unsafe_allow_html=True)
 
     with mp2:
@@ -1353,7 +1347,7 @@ with tab2:
             lambda r: "Critical" if r >= 0.12 else "High" if r >= 0.06 else "Moderate")
         top15 = top15.rename(columns={"county":"County","flood_events":"Flood Events"})
         top15 = top15[["County","Flood Rate","Flood Events","Risk"]]
-        st.dataframe(top15, hide_index=True, use_container_width=True, height=355)
+        st.dataframe(top15, hide_index=True, use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -1453,7 +1447,7 @@ with tab3:
             font=dict(family="DM Sans"),
             showlegend=False,
         )
-        st.plotly_chart(fig_scan, use_container_width=True, config=dict(displayModeBar=False))
+        st.plotly_chart(fig_scan, use_container_width=True, config=dict(displayModeBar=False, scrollZoom=False))
         st.markdown("</div>", unsafe_allow_html=True)
 
     with sc2:
@@ -1575,7 +1569,7 @@ with tab4:
             font=dict(family="DM Sans"), margin=dict(t=5,b=5,l=5,r=5),
             legend=dict(orientation="h", y=1.15, x=0, font=dict(size=10)),
         )
-        st.plotly_chart(fig_tl, use_container_width=True, config=dict(displayModeBar=False))
+        st.plotly_chart(fig_tl, use_container_width=True, config=dict(displayModeBar=False, scrollZoom=False))
         st.markdown("</div>", unsafe_allow_html=True)
 
     with h2:
@@ -1604,7 +1598,7 @@ with tab4:
             paper_bgcolor=BG_CARD, plot_bgcolor=BG_CARD,
             font=dict(family="DM Sans"), margin=dict(t=5,b=5,l=5,r=5),
         )
-        st.plotly_chart(fig_sea, use_container_width=True, config=dict(displayModeBar=False))
+        st.plotly_chart(fig_sea, use_container_width=True, config=dict(displayModeBar=False, scrollZoom=False))
         st.markdown("</div>", unsafe_allow_html=True)
 
     # Annual trend
@@ -1638,7 +1632,7 @@ with tab4:
         font=dict(family="DM Sans"), margin=dict(t=5,b=5,l=5,r=5),
         legend=dict(orientation="h", y=1.12, font=dict(size=10)),
     )
-    st.plotly_chart(fig_yr, use_container_width=True, config=dict(displayModeBar=False))
+    st.plotly_chart(fig_yr, use_container_width=True, config=dict(displayModeBar=False, scrollZoom=False))
     st.markdown("</div>", unsafe_allow_html=True)
 
     # Multi-county comparison
@@ -1666,7 +1660,7 @@ with tab4:
             yaxis=dict(showgrid=True, gridcolor="#F2F3F4", tickfont=dict(size=9.5)),
             legend=dict(orientation="h", yanchor="bottom", y=1.02, font=dict(size=10)),
         )
-        st.plotly_chart(fig_cmp, use_container_width=True, config=dict(displayModeBar=False))
+        st.plotly_chart(fig_cmp, use_container_width=True, config=dict(displayModeBar=False, scrollZoom=False))
     st.markdown("</div>", unsafe_allow_html=True)
 
     # System KPIs
@@ -1825,7 +1819,7 @@ with tab5:
             paper_bgcolor=BG_CARD, plot_bgcolor=BG_CARD,
             font=dict(family="DM Sans"), margin=dict(t=15,b=0,l=5,r=5),
         )
-        st.plotly_chart(fig_cv, use_container_width=True, config=dict(displayModeBar=False))
+        st.plotly_chart(fig_cv, use_container_width=True, config=dict(displayModeBar=False, scrollZoom=False))
         st.markdown(f"""
         <div class="abox abox-info" style="font-size:0.8rem">
         The ±std bars show consistency across all 5 time windows.
@@ -1862,7 +1856,7 @@ with tab5:
                 font=dict(family="DM Sans"), margin=dict(t=15,b=0,l=5,r=5),
                 legend=dict(orientation="h", y=1.15, font=dict(size=9.5)),
             )
-            st.plotly_chart(fig_abl, use_container_width=True, config=dict(displayModeBar=False))
+            st.plotly_chart(fig_abl, use_container_width=True, config=dict(displayModeBar=False, scrollZoom=False))
             delta = abl.iloc[0]["Test AUC"] - abl.iloc[2]["Test AUC"]
             st.markdown(f"""
             <div class="abox abox-info" style="font-size:0.8rem">
@@ -1902,7 +1896,7 @@ with tab5:
         yaxis=dict(title="Month", tickfont=dict(size=9.5)),
         paper_bgcolor=BG_CARD, font=dict(family="DM Sans"),
     )
-    st.plotly_chart(fig_heat, use_container_width=True, config=dict(displayModeBar=False))
+    st.plotly_chart(fig_heat, use_container_width=True, config=dict(displayModeBar=False, scrollZoom=False))
     st.markdown("</div>", unsafe_allow_html=True)
 
     # Methodology
