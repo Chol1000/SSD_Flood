@@ -26,6 +26,7 @@ import pandas as pd
 import requests
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -863,4 +864,37 @@ def historical(counties: str, year_min: int, year_max: int, months: str):
 # ── Serve the built React frontend, if present (single-container deploy) ─────
 FRONTEND_DIST = REPO_ROOT / "frontend" / "dist"
 if FRONTEND_DIST.exists():
-    app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
+    # Real build output (/assets/..., /geo/...) is served from disk.
+    app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="assets")
+    for _extra in ("geo",):
+        _dir = FRONTEND_DIST / _extra
+        if _dir.is_dir():
+            app.mount(f"/{_extra}", StaticFiles(directory=str(_dir)), name=_extra)
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def spa_fallback(full_path: str):
+        """Hand any non-API path to the React app.
+
+        Routing is client-side, so paths like /alerts or /county/Malakal exist
+        only once index.html has loaded — there is no file behind them. A plain
+        StaticFiles mount 404s on those, which breaks every deep link and every
+        page refresh away from the root. Serve the real file when one exists,
+        and index.html otherwise so the router can take over.
+
+        /api/* is excluded: an unknown API path should stay a 404 rather than
+        silently return HTML, which is far harder to debug from the client.
+        """
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not found")
+
+        candidate = (FRONTEND_DIST / full_path).resolve()
+        # Only serve inside the build directory — `full_path` is attacker
+        # controlled, and without this check `../` escapes it.
+        if (
+            full_path
+            and FRONTEND_DIST.resolve() in candidate.parents
+            and candidate.is_file()
+        ):
+            return FileResponse(str(candidate))
+
+        return FileResponse(str(FRONTEND_DIST / "index.html"))
