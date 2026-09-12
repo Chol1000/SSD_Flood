@@ -22,15 +22,34 @@ jobs:
       - name: Push to Hugging Face Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          HF_USERNAME: ${{ vars.HF_USERNAME }}
-          HF_SPACE: ${{ vars.HF_SPACE }}
+          # Accept the username and space name from either tab of
+          # Settings > Secrets and variables > Actions, since which one a value
+          # belongs in is easy to get wrong and the failure is opaque.
+          HF_USERNAME: ${{ vars.HF_USERNAME || secrets.HF_USERNAME }}
+          HF_SPACE: ${{ vars.HF_SPACE || secrets.HF_SPACE }}
+          # Falls back to this repository's own name, which is the common case.
+          DEFAULT_SPACE: ${{ github.event.repository.name }}
         run: |
-          if [ -z "$HF_TOKEN" ] || [ -z "$HF_USERNAME" ] || [ -z "$HF_SPACE" ]; then
-            echo "::error::Set the HF_TOKEN secret plus the HF_USERNAME and HF_SPACE variables in repo settings."
+          SPACE="${HF_SPACE:-$DEFAULT_SPACE}"
+
+          if [ -z "$HF_TOKEN" ]; then
+            echo "::error::HF_TOKEN is not set. Add it under Settings > Secrets and variables > Actions > Secrets tab, using a Hugging Face token with Write access."
             exit 1
           fi
+          if [ -z "$HF_USERNAME" ]; then
+            echo "::error::HF_USERNAME is not set. Add it under Settings > Secrets and variables > Actions (either tab) as your Hugging Face username — this is your HF account name, which may differ from your GitHub one."
+            exit 1
+          fi
+
+          echo "Deploying to https://huggingface.co/spaces/$HF_USERNAME/$SPACE"
+
           # Force-push: the Space is a deploy target, not a place anyone edits,
           # so GitHub's history is always the one that should win.
-          git push --force \
-            "https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/$HF_SPACE" \
-            HEAD:main
+          if ! git push --force \
+              "https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/$SPACE" \
+              HEAD:main 2> >(tee /tmp/push_err >&2); then
+            echo "::error::Push to the Space failed. Check that the Space $HF_USERNAME/$SPACE already exists (create it at huggingface.co/new-space with SDK=Docker), and that the token has Write access to it."
+            exit 1
+          fi
+
+          echo "Deployed. The Space is now building: https://huggingface.co/spaces/$HF_USERNAME/$SPACE"
