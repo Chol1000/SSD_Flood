@@ -1,5 +1,5 @@
 """
-data_access.py — Artifact loading and dataframe filtering for app.py.
+data_access.py — Artifact loading and dataframe filtering for the API.
 """
 
 import json

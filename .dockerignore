@@ -1,0 +1,31 @@
+# Keep the build context small and the image reproducible. Without this,
+# `COPY frontend/ ./` drags in the host's node_modules — hundreds of MB of
+# macOS-native binaries that then shadow the Linux ones `npm ci` installs.
+frontend/node_modules
+frontend/dist
+**/node_modules
+
+# Training-only inputs and outputs. The API reads model/ at runtime; it never
+# touches the raw dataset, the notebook, or the paper figures.
+south_sudan_flood_dataset_2011_2025.csv
+flood_prediction_south_sudan.ipynb
+train.py
+figures/
+model_backup_pre_v2/
+PAPER_South_Sudan_Flood_Prediction.md
+
+# Version control, caches, local env
+.git
+.gitignore
+.github
+.devcontainer
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+.venv
+.env
+
+# OS noise
+.DS_Store
+**/.DS_Store

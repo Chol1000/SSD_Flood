@@ -1,0 +1,36 @@
+name: Deploy to Hugging Face Space
+
+# A Space is its own git repository, so a push to GitHub does not reach it by
+# itself. This mirrors main into the Space on every push, which is what makes
+# the deployment automatic: push here, the Space rebuilds and redeploys.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # lets you re-deploy by hand without an empty commit
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The Space needs real history, not a shallow clone, or the push is
+          # rejected as unrelated to whatever the Space already has.
+          fetch-depth: 0
+          lfs: true
+
+      - name: Push to Hugging Face Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_USERNAME: ${{ vars.HF_USERNAME }}
+          HF_SPACE: ${{ vars.HF_SPACE }}
+        run: |
+          if [ -z "$HF_TOKEN" ] || [ -z "$HF_USERNAME" ] || [ -z "$HF_SPACE" ]; then
+            echo "::error::Set the HF_TOKEN secret plus the HF_USERNAME and HF_SPACE variables in repo settings."
+            exit 1
+          fi
+          # Force-push: the Space is a deploy target, not a place anyone edits,
+          # so GitHub's history is always the one that should win.
+          git push --force \
+            "https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/$HF_SPACE" \
+            HEAD:main
