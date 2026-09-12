@@ -438,7 +438,25 @@ def list_counties():
     return out
 
 
-@app.get("/api/county/{county}")
+# Declared before the bare /api/county/{county:path} route below: the path
+# convertor is greedy, so that route would otherwise swallow this suffix
+# and report the county as unknown.
+@app.get("/api/county/{county:path}/climate-percentiles")
+def county_climate_percentiles(county: str):
+    """Historical (2011-2025) min/p10/p25/median/p75/p90/max for this county's
+    five live climate inputs, precomputed from the training dataset (see
+    model/county_climate_percentiles.json) — lets the UI show today's live
+    reading against the county's own historical distribution, not just a
+    single median point, using the same percentile-anomaly language (e.g.
+    "90th percentile rainfall") humanitarian early-warning bulletins use.
+    """
+    art = _artifacts()
+    if county not in art["counties"]:
+        raise HTTPException(404, f"Unknown county: {county}")
+    return art["county_climate_percentiles"].get(county, {})
+
+
+@app.get("/api/county/{county:path}")
 def county_detail(county: str):
     art = _artifacts()
     if county not in art["counties"]:
@@ -458,22 +476,7 @@ def county_detail(county: str):
     }
 
 
-@app.get("/api/county/{county}/climate-percentiles")
-def county_climate_percentiles(county: str):
-    """Historical (2011-2025) min/p10/p25/median/p75/p90/max for this county's
-    five live climate inputs, precomputed from the training dataset (see
-    model/county_climate_percentiles.json) — lets the UI show today's live
-    reading against the county's own historical distribution, not just a
-    single median point, using the same percentile-anomaly language (e.g.
-    "90th percentile rainfall") humanitarian early-warning bulletins use.
-    """
-    art = _artifacts()
-    if county not in art["counties"]:
-        raise HTTPException(404, f"Unknown county: {county}")
-    return art["county_climate_percentiles"].get(county, {})
-
-
-@app.get("/api/live/{county}")
+@app.get("/api/live/{county:path}")
 def live_data(county: str):
     art = _artifacts()
     if county not in art["counties"]:
@@ -481,7 +484,7 @@ def live_data(county: str):
     return get_cached_live(county)
 
 
-@app.get("/api/weather/{county}")
+@app.get("/api/weather/{county:path}")
 def weather(county: str):
     """Real-time 'right now' conditions + short rain outlook (OpenWeatherMap).
     Separate from /api/live — this never feeds the model, it's a human-facing
@@ -644,7 +647,7 @@ def scan(
     return sorted(results, key=lambda r: r["probability"], reverse=True)
 
 
-@app.get("/api/outlook/{county}/multistep")
+@app.get("/api/outlook/{county:path}/multistep")
 def outlook_multistep(county: str, months: int = 6):
     """Recursive GRU rollout. `months` can go out to 48 (4 calendar years
     ahead) — uncertainty compounds heavily that far out (each step's forecast
@@ -686,7 +689,7 @@ OUTLOOK_ADVICE = {
 }
 
 
-@app.get("/api/report/{county}")
+@app.get("/api/report/{county:path}")
 def report(county: str, month: Optional[int] = None, year: Optional[int] = None,
            range_from: Optional[int] = None, range_to: Optional[int] = None):
     art = _artifacts()
