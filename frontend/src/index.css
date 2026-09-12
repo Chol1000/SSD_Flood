@@ -1,0 +1,292 @@
+:root {
+  --color-primary: #1565c0;
+  --color-primary-light: #5e92f3;
+  --color-bg: #f6f8fb;
+  --color-surface: #ffffff;
+  --color-border: #dde3ec;
+  --color-text: #1c2733;
+  --color-text-muted: #5a6b7d;
+
+  --risk-low: #15803d;
+  --risk-moderate: #b7791e;
+  --risk-high: #c2410c;
+  --risk-critical: #dc2626;
+
+  --radius: 6px;
+  --transition: 150ms ease;
+  color-scheme: light;
+}
+
+/* Mirrors the colors AntD's own darkAlgorithm uses (see App.tsx), so the
+   plain CSS in this file — card borders, shadows, the risk palette — stays
+   consistent with AntD's dark components instead of keeping light-mode
+   borders on a dark background. The risk hues are lifted in lightness for
+   the same reason ui.tsx keeps a second palette: the light-mode greens and
+   reds go muddy against #141414. */
+:root[data-theme="dark"] {
+  --color-bg: #141414;
+  --color-surface: #1f1f1f;
+  --color-border: #303030;
+  --color-text: #e6e6e6;
+  --color-text-muted: #a6a6a6;
+
+  --risk-low: #4ade80;
+  --risk-moderate: #fbbf24;
+  --risk-high: #fb923c;
+  --risk-critical: #f87171;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Safety net against a single un-audited wide row (a filter bar, a 12-column
+   heatmap) dragging the whole page sideways on a phone — which reads as "the
+   entire app shifts when I scroll", the worst version of this bug.
+
+   Deliberately scoped to `html` only, NOT body/#root: setting overflow-x on
+   an element forces its overflow-y to a used value of `auto` too (a CSS
+   Overflow spec rule — one axis can't stay `visible` once the other isn't),
+   turning that element into its own scroll container. `html` is already the
+   outermost scrolling element so that's harmless; applying it to body/#root
+   as well would make them intermediate scroll containers and break
+   `position: sticky` on the Layout header and Sider. */
+html {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+body,
+#root {
+  max-width: 100vw;
+}
+
+/* AntD's Modal/Drawer scroll-lock sets `overflow: hidden` inline on <body>
+   while one is open. Per the same spec rule above, that turns <body> into a
+   scroll container the instant any Modal opens, which detaches the sticky
+   Sider and header. `!important` outranks the inline style; losing the
+   background-scroll-lock is a far smaller cost than the shell visibly
+   breaking every time a dialog opens. */
+body {
+  overflow: visible !important;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+
+/* Thin, light cards with a soft shadow instead of a heavy border — applied
+   everywhere by default. Hoverable cards get a gentle lift so interactivity
+   reads without any color or gradient. */
+.ant-card {
+  border-color: var(--color-border);
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.04);
+}
+.ant-card-hoverable:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(16, 24, 40, 0.08);
+  transition: transform var(--transition), box-shadow var(--transition);
+}
+
+/* AntD's default card head title is single-line (nowrap + ellipsis), which
+   silently clips the title+subtitle pairs several pages here stack in that
+   slot. None of this app's card titles are long strings needing truncation,
+   so allowing wrap everywhere is safe. !important is required because AntD's
+   cssinjs injects its rule into a runtime <style> tag after this sheet, so an
+   equal-specificity plain rule loses on cascade order. */
+.ant-card-head-title {
+  overflow: visible !important;
+  white-space: normal !important;
+  text-overflow: unset !important;
+}
+
+/* Center table pagination app-wide. */
+.ant-table-wrapper .ant-table-pagination.ant-pagination {
+  justify-content: center;
+}
+
+/* Statistic values are data — align the digits so a column of them doesn't
+   jitter as values tick during live refresh. */
+.ant-statistic-content-value,
+.ant-statistic-content-suffix {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Recharts draws its default tooltip/cursor with hardcoded light colors.
+   These two keep it legible on a dark card. */
+:root[data-theme="dark"] .recharts-tooltip-wrapper .recharts-default-tooltip {
+  background: #1f1f1f !important;
+  border-color: #303030 !important;
+  color: #e6e6e6;
+}
+:root[data-theme="dark"] .recharts-rectangle.recharts-tooltip-cursor {
+  fill: rgba(255, 255, 255, 0.06);
+}
+
+/* Filter-bar pattern: a row of a search input plus several fixed-width
+   Selects that must NOT wrap onto extra lines on a phone (wrapping reads as
+   "filters broken" rather than as a toolbar). The row keeps its natural
+   width and scrolls horizontally instead — the same pattern a mobile OS uses
+   for a horizontal chip list. */
+.filter-bar {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.filter-bar-inner {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 12px;
+  width: max-content;
+  min-width: 100%;
+}
+
+/* The flood calendar is a 15x12 grid of cells — it can't stack or reflow, so
+   it scrolls within its own card rather than squeezing cells to invisibility
+   or blowing out the page width. */
+.scroll-x {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* MapLibre popups follow the app theme rather than defaulting to white. */
+.ssd-map-popup .maplibregl-popup-content {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: 0 4px 14px rgba(16, 24, 40, 0.18);
+  font-size: 13px;
+}
+.ssd-map-popup .maplibregl-popup-tip {
+  border-top-color: var(--color-surface);
+}
+
+/* Live weather icon motion — real precipitation/storm conditions get a
+   looping animation so the icon reads as "live" rather than a static glyph,
+   without fabricating any underlying data. */
+@keyframes wi-rain-fall {
+  0% {
+    transform: translateY(-4px);
+    opacity: 0;
+  }
+  15%,
+  85% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateY(6px);
+    opacity: 0;
+  }
+}
+.wi-raindrop {
+  animation: wi-rain-fall 1.1s linear infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+@keyframes wi-bolt-flash {
+  0%,
+  55%,
+  100% {
+    opacity: 1;
+  }
+  60%,
+  90% {
+    opacity: 0.15;
+  }
+}
+.wi-bolt {
+  animation: wi-bolt-flash 2.6s ease-in-out infinite;
+  transform-box: fill-box;
+}
+
+@keyframes spark-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.6);
+    opacity: 0.45;
+  }
+}
+.spark-pulse {
+  animation: spark-pulse 1.8s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wi-raindrop,
+  .wi-bolt,
+  .spark-pulse {
+    animation: none !important;
+  }
+  .ant-card-hoverable:hover {
+    transform: none !important;
+  }
+}
+
+/* Small-screen safety net for AntD's grid. Below the same breakpoint where
+   the sidebar collapses to a drawer (992px = AntD's "lg", matching
+   Layout.tsx's isMobile), any Col given a plain fixed `span` — rather than
+   responsive xs/sm/md props — stacks to full width instead of being squeezed
+   to an unreadable sliver. Cols that DO declare responsive props are left
+   alone, since those were sized for a phone deliberately. */
+@media (max-width: 991px) {
+  .ant-row > [class*="ant-col-"]:not([class*="ant-col-xs-"]):not([class*="ant-col-sm-"]) {
+    flex: 0 0 100% !important;
+    max-width: 100% !important;
+  }
+  /* Tables can't stack — let them scroll inside their own card instead of
+     squeezing every column or widening the page. */
+  .ant-table-wrapper .ant-table-content {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .ant-modal {
+    max-width: calc(100vw - 24px);
+    margin: 0 auto;
+  }
+  /* Opt-out of the blanket stacking rule for narrow in-card mini-stat trios
+     (already evenly split and short); stacking those wastes card height for
+     no readability gain. */
+  .compact-stat-row {
+    flex-wrap: nowrap !important;
+  }
+  .compact-stat-row > [class*="ant-col-"] {
+    flex: 1 1 0 !important;
+    max-width: 100% !important;
+    min-width: 0;
+  }
+}

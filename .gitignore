@@ -21,9 +21,6 @@ south_sudan_flood_dataset_2011_2025.csv
 # Paper — distributed separately
 PAPER_South_Sudan_Flood_Prediction.md
 
-# Streamlit
-.streamlit/secrets.toml
-
 # OS
 .DS_Store
 Thumbs.db
@@ -34,3 +31,7 @@ Thumbs.db
 
 # Model binary (large — keep or add to Git LFS)
 # model/best_model.pkl
+
+# Local snapshot of model artefacts taken before retraining — the previous
+# versions are already in git history, so this is a working copy only.
+model_backup_pre_v2/

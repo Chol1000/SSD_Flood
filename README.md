@@ -1,10 +1,18 @@
+---
+title: SSD Flood Early Warning System
+emoji: 🌊
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # South Sudan Flood Early Warning System
 
 **County-level flood prediction across all 79 administrative counties of South Sudan using satellite-derived climate and terrain data (2011–2025)**
 
 > **Author:** Chol Atem Giet Monykuch · [c.monykuch@alustudent.com](mailto:c.monykuch@alustudent.com) · African Leadership University  
 > **Model:** Logistic Regression · AUC-ROC = 0.9601 (95% CI: 0.935–0.982) · F1 = 0.7581 · Precision = 0.7705 · Recall = 0.7460  
-> **Live App:** [https://ssd-flood.streamlit.app](https://ssd-flood.streamlit.app)  
+> **Live App:** [https://huggingface.co/spaces/Chol1000/SSD_Flood](https://huggingface.co/spaces/Chol1000/SSD_Flood)  
 > **Source Code:** [https://github.com/Chol1000/SSD_Flood](https://github.com/Chol1000/SSD_Flood)
 
 ---
@@ -13,24 +21,26 @@
 
 South Sudan experiences catastrophic annual flooding driven by the Nile river system and the Sudd — the world's largest tropical wetland. Since 2019, flooding has displaced over one million people annually, yet no systematic county-level predictive early warning system exists.
 
-This project presents the **first machine learning flood prediction framework covering all 79 South Sudan counties**, trained on 14,220 county-month satellite observations spanning 15 years (2011–2025). The system produces calibrated flood risk probabilities at county-month granularity and is deployed as a real-time interactive web application.
+This project presents the **first machine learning flood prediction framework covering all 79 South Sudan counties**, trained on 14,220 county-month satellite observations spanning 15 years (2011–2025). The system produces calibrated flood risk probabilities at county-month granularity and is deployed as a real-time interactive web application — a React dashboard served by a FastAPI backend that runs live inference against Open-Meteo and NASA POWER climate feeds.
 
 ---
 
 ## Live Demo
 
-**[https://ssd-flood.streamlit.app](https://ssd-flood.streamlit.app)**
+**[https://huggingface.co/spaces/Chol1000/SSD_Flood](https://huggingface.co/spaces/Chol1000/SSD_Flood)**
 
-The deployed early warning application provides four interactive views:
+The deployed early warning system is a React dashboard (Ant Design) backed by a FastAPI service:
 
-| Tab | What it does |
+| Page | What it does |
 |---|---|
-| **Flood Risk Prediction** | Select any of the 79 counties — climate inputs auto-fill with historical medians. Adjust sliders to current or forecast conditions and click **Predict** to get a calibrated flood probability and alert level (Critical / High / Moderate / Low). |
-| **County Risk Map** | Choropleth bar chart showing historical flood rates across all 79 counties, colour-coded by risk tier. Identifies the most structurally vulnerable counties at a glance. |
-| **Historical Analysis** | Per-county monthly flood time series from 2011 to 2025. Select a county to see its full flood history alongside seasonal and annual trend breakdowns. |
-| **Model Performance** | Full transparency panel — test-set metrics, confusion matrices, ROC/PR curves, feature importance, ablation results, and the persistence baseline comparison. |
-
-> The app runs on Streamlit Community Cloud (free tier). If it shows a **"This app is sleeping"** screen, click **Wake up** and it will be ready within 30 seconds.
+| **National Overview** | Live nowcast across all 79 counties, the 2011–2025 historical baseline, flood calendar heatmap, and a sortable table of every county. |
+| **Alerts** | A written early-warning bulletin grouped by severity, with per-county recommended actions. |
+| **Live Updates** | A terminal of current weather and flood-risk readings for all 79 counties, refreshed automatically. |
+| **Risk Map** | The same live risk data plotted geographically over satellite imagery with county boundaries. |
+| **Prediction** | Per-county nowcast and month-ahead outlook, sensitivity simulation, and how today compares to that county's own historical normal. |
+| **Historical** | Filter the 2011–2025 record by county, year range, and month; per-county calendars and cross-county co-occurrence. |
+| **Model & Validation** | Full transparency panel — test metrics, confusion matrix, feature importance, ablation, significance tests, and the persistence baseline. |
+| **Reports** | Generate a national executive summary or a per-county PDF bounded to a chosen one-year window. |
 
 ---
 
@@ -137,12 +147,18 @@ All 16 figures were generated directly from the fitted pipelines and stored in `
 
 ```
 ssd_flood/
-├── app.py                              # Streamlit early warning application
+├── backend/                            # FastAPI service — inference, live climate, PDF reports
+│   ├── main.py                         # API routes; also serves the built React app
+│   └── report.py                       # County and national PDF report generation
+├── frontend/                           # React + Ant Design dashboard (Vite, TypeScript)
+│   └── src/                            # Pages, shared components, API client
+├── features.py, models.py              # Feature engineering and model loading (shared)
+├── data_access.py, data_sources.py     # Dataset access and live climate providers
+├── geo.py, weather_live.py             # County coordinates and live weather
 ├── train.py                            # Full training pipeline — reproduces all results
 ├── flood_prediction_south_sudan.ipynb  # Interactive analysis notebook
-├── requirements.txt                    # Python dependencies
-├── .streamlit/
-│   └── config.toml                     # Streamlit theme and server config
+├── requirements.txt                    # Training dependencies (see backend/ for the app)
+├── Dockerfile                          # Single-container build: React build + FastAPI serve
 ├── figures/                            # 16 publication figures (fig01–fig16)
 │   ├── fig01_study_area.png
 │   ├── fig02_class_imbalance.png
@@ -152,9 +168,9 @@ ssd_flood/
     ├── best_model.pkl                  # Trained Logistic Regression pipeline (serialised)
     ├── metadata.json                   # All metrics, thresholds, feature importance, significance tests
     ├── counties.json                   # County names and metadata
-    ├── county_defaults.json            # Per-county median feature values for app auto-fill
+    ├── county_defaults.json            # Per-county median feature values for input auto-fill
     ├── county_flood_history.csv        # Historical flood rates per county (2011–2025)
-    ├── feature_stats.json              # Feature statistics for app display
+    ├── feature_stats.json              # Feature statistics for display
     └── monthly_flood_data.csv          # Monthly aggregate flood statistics
 ```
 
@@ -164,23 +180,39 @@ ssd_flood/
 
 ## Running Locally
 
+In development the app is two processes: the FastAPI backend and the Vite dev server.
+
 ```bash
 # 1. Clone the repository
 git clone https://github.com/Chol1000/SSD_Flood.git
 cd SSD_Flood
 
-# 2. Install dependencies
-pip install -r requirements.txt
+# 2. Install backend dependencies and start the API
+pip install -r backend/requirements.txt
+uvicorn backend.main:app --reload --port 8000
 
-# 3. Launch the Streamlit early warning app
-streamlit run app.py
+# 3. In a second terminal, install and start the dashboard
+npm --prefix frontend install
+npm --prefix frontend run dev
 ```
 
-The app runs at `http://localhost:8501` and provides four views:
-- **Flood Risk Prediction** — select any county, adjust climate inputs, get a calibrated flood probability
-- **County Risk Map** — historical flood rates across all 79 counties
-- **Historical Analysis** — per-county flood time series (2011–2025)
-- **Model Performance** — metrics, feature importance, ablation results, and methodology transparency
+The dashboard runs at `http://localhost:5173` and proxies `/api` to the backend on
+port 8000. If port 8000 is already in use, start uvicorn on another port and point
+the dev server at it with `VITE_API_TARGET=http://127.0.0.1:<port>`.
+
+For a production-style single process, build the frontend first — FastAPI then
+serves it directly alongside the API:
+
+```bash
+npm --prefix frontend run build
+uvicorn backend.main:app --port 8000        # dashboard + API on one port
+```
+
+Or build the container, which does both steps and is what the deployed Space runs:
+
+```bash
+docker build -t ssd-flood . && docker run -p 7860:7860 ssd-flood
+```
 
 ### Reproducing All Results from Scratch
 
@@ -195,18 +227,14 @@ This regenerates all model artefacts in `model/` and all 16 figures in `figures/
 
 ## Requirements
 
-```
-streamlit>=1.32.0
-pandas>=2.0.0
-numpy>=1.24.0
-scikit-learn>=1.3.0
-imbalanced-learn>=0.11.0
-xgboost>=2.0.0
-lightgbm>=4.0.0
-plotly>=5.18.0
-folium>=0.15.0
-streamlit-folium>=0.18.0
-```
+**Training** (`requirements.txt`) — pandas, numpy, scipy, scikit-learn,
+imbalanced-learn, xgboost, lightgbm, matplotlib, seaborn, torch.
+
+**Application** (`backend/requirements.txt`) — fastapi, uvicorn, pandas, numpy,
+scikit-learn, xgboost, lightgbm, torch, requests, matplotlib, reportlab.
+
+**Dashboard** (`frontend/package.json`) — react, antd, recharts, maplibre-gl,
+react-router-dom, vite, typescript.
 
 ---
 

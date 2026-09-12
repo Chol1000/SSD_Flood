@@ -39,6 +39,13 @@ from imblearn.over_sampling import SMOTE
 
 import xgboost  as xgb
 import lightgbm as lgb
+import torch
+
+from features import (
+    FEATURES, RAW_FEATURES, LAG_FEATURES, STATIC_GEO, TARGET,
+    engineer_features, add_lag_features,
+)
+from models import FloodGRU, SEQ_FEATURES, STATIC_FEATURES_SEQ, SEQ_LEN
 
 # ── 1. Configuration ───────────────────────────────────────────────────────────
 SEED        = 42
@@ -48,11 +55,18 @@ DATA_FILE   = "south_sudan_flood_dataset_2011_2025.csv"
 N_BOOT      = 1000          # bootstrap iterations for CIs
 N_CV        = 5             # TimeSeriesSplit folds
 
+torch.manual_seed(SEED)
+# The GRU is tiny; pinning to 1 thread avoids contention with the OpenMP/BLAS
+# thread pools already spun up by XGBoost/LightGBM/SMOTE earlier in this
+# script (observed to cause severe slowdowns/hangs when left at default).
+torch.set_num_threads(1)
+
 PALETTE = {
     "Logistic Regression" : "#2980B9",
     "Random Forest"       : "#27AE60",
     "XGBoost"             : "#E74C3C",
     "LightGBM"            : "#F39C12",
+    "GRU (Outlook)"       : "#8E44AD",
 }
 MODEL_COLORS = list(PALETTE.values())
 
@@ -73,34 +87,13 @@ print(f"        Counties: {df['county'].nunique()} | "
       f"Floods: {df['flood'].sum():,} ({df['flood'].mean()*100:.2f}%)")
 
 # ── 3. Feature Engineering ─────────────────────────────────────────────────────
-# NOTE: wetness_index is divided by 1000 to keep values on a comparable scale.
-df["temp_range"]    = df["max_temperature_celsius"] - df["min_temperature_celsius"]
-df["wetness_index"] = (df["rainfall_mm"] * df["soil_moisture_mm"]) / 1000
-df["rain_wetland"]  = df["rainfall_mm"] * df["wetland_fraction"]
-df["month_sin"]     = np.sin(2 * np.pi * df["month"] / 12)
-df["month_cos"]     = np.cos(2 * np.pi * df["month"] / 12)
+# Formulas live in features.py (shared with app.py) to eliminate train/serve drift.
+df = engineer_features(df)
+# Per-county chronological lag/rolling features — must run before the
+# train/test split so windows are computed over real consecutive months.
+df = add_lag_features(df)
 
-FEATURES = [
-    # Core climate
-    "rainfall_mm", "soil_moisture_mm",
-    "max_temperature_celsius", "min_temperature_celsius",
-    "vapor_pressure_deficit_kPa",
-    # Terrain & land cover  (water_fraction deliberately excluded — label leakage)
-    "wetland_fraction", "elevation_m", "slope_deg", "ndvi",
-    # Temporal lag
-    "flood_prev_month",
-    # Engineered
-    "temp_range", "wetness_index", "rain_wetland",
-    "month_sin", "month_cos",
-]
-RAW_FEATURES = [
-    "rainfall_mm", "soil_moisture_mm",
-    "max_temperature_celsius", "min_temperature_celsius",
-    "vapor_pressure_deficit_kPa",
-    "wetland_fraction", "elevation_m", "slope_deg", "ndvi",
-    "flood_prev_month",
-]
-TARGET = "flood"
+FEATURES = FEATURES + LAG_FEATURES
 
 assert df[FEATURES].isnull().sum().sum() == 0, "Unexpected NaN in features"
 print(f"        Features: {len(FEATURES)}  |  water_fraction excluded (label leakage)\n")
@@ -125,12 +118,40 @@ X_train, X_test = X[~test_mask], X[test_mask]
 y_train, y_test = y[~test_mask], y[test_mask]
 scale_pos = (y_train == 0).sum() / (y_train == 1).sum()
 
-tscv = TimeSeriesSplit(n_splits=N_CV)
 print(f"[Split]  Train 2011–2023: {len(X_train):,} rows | "
       f"Flood rate: {y_train.mean()*100:.2f}%")
 print(f"         Test  2024–2025: {len(X_test):,}  rows | "
       f"Flood rate: {y_test.mean()*100:.2f}%")
 print(f"         Imbalance: {scale_pos:.1f}:1  (handled via SMOTE + class_weight)\n")
+
+
+def make_period_folds(period_df: pd.DataFrame, n_splits: int):
+    """Expanding-window folds split on unique (year, month) periods rather
+    than raw pooled row positions. All 79 counties share the same calendar
+    months, so a plain TimeSeriesSplit over flat rows can place some counties'
+    rows for a given month in the train fold and others in the validation
+    fold — this splits fold boundaries strictly on month boundaries instead.
+    """
+    periods = (period_df[["year", "month"]]
+               .drop_duplicates()
+               .sort_values(["year", "month"])
+               .reset_index(drop=True))
+    period_pos = {}
+    for pos, (yr, mo) in enumerate(zip(period_df["year"], period_df["month"])):
+        period_pos.setdefault((yr, mo), []).append(pos)
+
+    folds = []
+    for tr_p, val_p in TimeSeriesSplit(n_splits=n_splits).split(periods):
+        train_periods = set(map(tuple, periods.iloc[tr_p].values))
+        val_periods   = set(map(tuple, periods.iloc[val_p].values))
+        tr_idx  = np.array(sorted(p for period in train_periods for p in period_pos[period]))
+        val_idx = np.array(sorted(p for period in val_periods   for p in period_pos[period]))
+        folds.append((tr_idx, val_idx))
+    return folds
+
+
+fold_indices = make_period_folds(df_s.loc[~test_mask, ["year", "month"]].reset_index(drop=True), N_CV)
+print(f"[CV]     {N_CV} panel-aware folds (split on calendar month, not pooled rows)\n")
 
 # ── 6. Pipeline Definitions ────────────────────────────────────────────────────
 def make_pipelines(scale_pos_weight):
@@ -174,8 +195,9 @@ def make_pipelines(scale_pos_weight):
     }
 
 # ── 7. Cross-Validation ────────────────────────────────────────────────────────
-def run_cv(pipe, X_tr, y_tr, tscv):
-    """5-fold TimeSeriesSplit CV. Returns per-fold metrics + CV-optimal threshold.
+def run_cv(pipe, X_tr, y_tr, folds):
+    """5-fold panel-aware CV (see make_period_folds). Returns per-fold metrics
+    + CV-optimal threshold.
 
     The threshold is selected by maximising F1 on each validation fold
     independently; the mean across folds is the CV-optimal threshold applied
@@ -184,7 +206,7 @@ def run_cv(pipe, X_tr, y_tr, tscv):
     fold_metrics, fold_thresholds = [], []
     thresh_grid = np.linspace(0.05, 0.95, 181)   # 0.005 step — finer grid
 
-    for tr_idx, val_idx in tscv.split(X_tr):
+    for tr_idx, val_idx in folds:
         pipe.fit(X_tr[tr_idx], y_tr[tr_idx])
         y_prob = pipe.predict_proba(X_tr[val_idx])[:, 1]
         y_val  = y_tr[val_idx]
@@ -210,7 +232,7 @@ cv_results, cv_threshold, trained_pipes = {}, {}, {}
 
 for name, pipe in make_pipelines(scale_pos).items():
     print(f"  {name:<22}", end=" ", flush=True)
-    folds, t_opt = run_cv(pipe, X_train, y_train, tscv)
+    folds, t_opt = run_cv(pipe, X_train, y_train, fold_indices)
     cv_results[name]    = folds
     cv_threshold[name]  = t_opt
     # Re-fit on the full training set (threshold already fixed from CV)
@@ -275,10 +297,15 @@ for name, r in test_results.items():
           f"{r['tp']:2d} {r['fp']:2d} {r['fn']:2d} {r['tn']:4d}")
 
 # ── 9. Model Selection (CV-based + Operational Justification) ──────────────────
-# Model is chosen on CV precision (humanitarian EWS — false alarms have real cost).
-# Logistic Regression achieves the highest CV precision and is fully interpretable.
-# This selection is confirmed by test-set results but was not tuned on the test set.
-DEPLOYED_MODEL = "Logistic Regression"
+# Selected by CV precision, not hardcoded (humanitarian EWS — false alarms have
+# real cost). This is the "nowcast" slot: models that use the target month's
+# own (live-updating) climate inputs. Confirmed by test-set results but not
+# tuned there. The GRU sequence model below answers a different question — a
+# genuine month-ahead forecast using only pre-target-month history — so it is
+# evaluated separately and deployed as a second, complementary "outlook" model
+# rather than competing for this slot.
+cv_precision_by_model = {name: cv_results[name]["precision"].mean() for name in cv_results}
+DEPLOYED_MODEL = max(cv_precision_by_model, key=cv_precision_by_model.get)
 best           = test_results[DEPLOYED_MODEL]
 best_pipe      = trained_pipes[DEPLOYED_MODEL]
 print(f"\n[Deployed model]  {DEPLOYED_MODEL}")
@@ -303,6 +330,161 @@ f1_p   = f1_score(y_test, y_persist, zero_division=0)
 print(f"  AUC-ROC: {auc_p:.4f}  AP: {ap_p:.4f}")
 print(f"  F1: {f1_p:.4f}  Precision: {prec_p:.4f}  Recall: {rec_p:.4f}")
 print(f"  CM  TP={tp_p}  FP={fp_p}  FN={fn_p}  TN={tn_p}")
+
+# ── 10a. GRU Sequence Model (Month-Ahead Outlook) ─────────────────────────────
+# Unlike the 4 models above, this model is deliberately NOT given the target
+# month's own climate values — only the SEQ_LEN months strictly before it. It
+# answers "what is next month's flood risk, using only history we already
+# have" — a genuine forecast, complementary to the live nowcast models.
+print("\n[GRU]  Building per-county monthly sequences "
+      f"({SEQ_LEN}-month lookback, forecasting month t from t-{SEQ_LEN}..t-1)...")
+
+
+def build_sequences(df_all, seq_len=SEQ_LEN):
+    X_seq, X_static, y_seq, meta_rows = [], [], [], []
+    for county, g in df_all.groupby("county"):
+        g = g.sort_values(["year", "month"]).reset_index(drop=True)
+        vals_seq    = g[SEQ_FEATURES].values
+        vals_static = g[STATIC_FEATURES_SEQ].values
+        for t in range(seq_len, len(g)):
+            X_seq.append(vals_seq[t - seq_len:t])
+            X_static.append(vals_static[t])
+            y_seq.append(g.loc[t, "flood"])
+            meta_rows.append((county, int(g.loc[t, "year"]), int(g.loc[t, "month"])))
+    return (np.array(X_seq, dtype=np.float32),
+            np.array(X_static, dtype=np.float32),
+            np.array(y_seq, dtype=np.float32),
+            pd.DataFrame(meta_rows, columns=["county", "year", "month"]))
+
+
+Xg_seq, Xg_static, yg, meta_g = build_sequences(df_s)
+gtest_mask = meta_g["year"].values >= 2024
+
+# Standardise using TRAIN sequences only (fit on train, applied to test).
+seq_mean    = Xg_seq[~gtest_mask].reshape(-1, Xg_seq.shape[-1]).mean(axis=0)
+seq_std     = Xg_seq[~gtest_mask].reshape(-1, Xg_seq.shape[-1]).std(axis=0) + 1e-6
+static_mean = Xg_static[~gtest_mask].mean(axis=0)
+static_std  = Xg_static[~gtest_mask].std(axis=0) + 1e-6
+
+Xg_seq_n    = ((Xg_seq - seq_mean) / seq_std).astype(np.float32)
+Xg_static_n = ((Xg_static - static_mean) / static_std).astype(np.float32)
+
+Xg_seq_train, Xg_seq_test       = Xg_seq_n[~gtest_mask], Xg_seq_n[gtest_mask]
+Xg_static_train, Xg_static_test = Xg_static_n[~gtest_mask], Xg_static_n[gtest_mask]
+yg_train_seq                    = yg[~gtest_mask]
+meta_train_g = meta_g[~gtest_mask].reset_index(drop=True)
+
+# Hold out the last 12 months of the training period as an internal
+# validation split (early stopping + threshold selection). Full 5-fold CV is
+# skipped for the neural net for compute-time reasons; final comparison
+# against the 4 tabular models below uses the same held-out 2024-2025 test
+# set and identical bootstrap CI / DeLong / McNemar machinery, so the
+# head-to-head comparison on what matters (test performance) stays fair.
+val_periods_df = (meta_train_g[["year", "month"]].drop_duplicates()
+                   .sort_values(["year", "month"]).iloc[-12:])
+val_periods = set(map(tuple, val_periods_df.values))
+val_mask_g  = meta_train_g.apply(lambda r: (r["year"], r["month"]) in val_periods, axis=1).values
+tr_mask_g   = ~val_mask_g
+
+device    = torch.device("cpu")
+gru_model = FloodGRU().to(device)
+n_pos_g   = max((yg_train_seq[tr_mask_g] == 1).sum(), 1)
+n_neg_g   = (yg_train_seq[tr_mask_g] == 0).sum()
+criterion = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([n_neg_g / n_pos_g], dtype=torch.float32))
+optimizer = torch.optim.Adam(gru_model.parameters(), lr=1e-3, weight_decay=1e-4)
+
+Xtr_seq  = torch.tensor(Xg_seq_train[tr_mask_g])
+Xtr_stat = torch.tensor(Xg_static_train[tr_mask_g])
+ytr_g    = torch.tensor(yg_train_seq[tr_mask_g])
+Xval_seq  = torch.tensor(Xg_seq_train[val_mask_g])
+Xval_stat = torch.tensor(Xg_static_train[val_mask_g])
+yval_g    = torch.tensor(yg_train_seq[val_mask_g])
+
+best_val_auc, best_state, patience, bad_epochs = -1.0, None, 8, 0
+for epoch in range(1, 61):
+    gru_model.train()
+    perm = torch.randperm(len(ytr_g))
+    for i in range(0, len(ytr_g), 256):
+        idx = perm[i:i + 256]
+        optimizer.zero_grad()
+        loss = criterion(gru_model(Xtr_seq[idx], Xtr_stat[idx]), ytr_g[idx])
+        loss.backward()
+        optimizer.step()
+
+    gru_model.eval()
+    with torch.no_grad():
+        val_prob = torch.sigmoid(gru_model(Xval_seq, Xval_stat)).numpy()
+    val_auc = roc_auc_score(yval_g.numpy(), val_prob)
+    if val_auc > best_val_auc:
+        best_val_auc = val_auc
+        best_state   = {k: v.clone() for k, v in gru_model.state_dict().items()}
+        bad_epochs   = 0
+    else:
+        bad_epochs += 1
+        if bad_epochs >= patience:
+            break
+
+gru_model.load_state_dict(best_state)
+print(f"  Best internal validation AUC: {best_val_auc:.4f}  (epoch-stopped, patience={patience})")
+
+gru_model.eval()
+with torch.no_grad():
+    val_prob_final = torch.sigmoid(gru_model(Xval_seq, Xval_stat)).numpy()
+thresh_grid_g = np.linspace(0.05, 0.95, 181)
+f1s_g = [f1_score(yval_g.numpy(), val_prob_final >= t, zero_division=0) for t in thresh_grid_g]
+gru_threshold = float(thresh_grid_g[int(np.argmax(f1s_g))])
+
+with torch.no_grad():
+    test_prob_g = torch.sigmoid(
+        gru_model(torch.tensor(Xg_seq_test), torch.tensor(Xg_static_test))
+    ).numpy()
+
+# Align GRU test predictions to the exact row order of y_test via
+# (county, year, month) so DeLong/McNemar compare probabilities for the same
+# observations as the tabular models.
+align_key   = df_s.loc[test_mask, ["county", "year", "month"]].reset_index(drop=True)
+gru_prob_df = meta_g[gtest_mask].reset_index(drop=True).copy()
+gru_prob_df["gru_prob"] = test_prob_g
+gru_aligned = align_key.merge(gru_prob_df, on=["county", "year", "month"], how="left")
+assert gru_aligned["gru_prob"].isnull().sum() == 0, "GRU test alignment produced missing rows"
+y_prob_gru = gru_aligned["gru_prob"].values
+y_pred_gru = (y_prob_gru >= gru_threshold).astype(int)
+
+cm_g = confusion_matrix(y_test, y_pred_gru)
+tn_g, fp_g, fn_g, tp_g = cm_g.ravel()
+auc_g_lo, auc_g_hi = bootstrap_ci(y_test, y_prob_gru, None, lambda yt, yp: roc_auc_score(yt, yp))
+f1_g_lo, f1_g_hi   = bootstrap_ci(y_test, None, y_pred_gru, lambda yt, yp: f1_score(yt, yp, zero_division=0))
+
+GRU_NAME = "GRU (Outlook)"
+test_results[GRU_NAME] = {
+    "y_prob": y_prob_gru, "y_pred": y_pred_gru, "threshold": gru_threshold,
+    "auc_roc": roc_auc_score(y_test, y_prob_gru),
+    "auc_ci": (round(auc_g_lo, 4), round(auc_g_hi, 4)),
+    "ap": average_precision_score(y_test, y_prob_gru),
+    "f1": f1_score(y_test, y_pred_gru, zero_division=0),
+    "f1_ci": (round(f1_g_lo, 4), round(f1_g_hi, 4)),
+    "precision": precision_score(y_test, y_pred_gru, zero_division=0),
+    "recall": recall_score(y_test, y_pred_gru, zero_division=0),
+    "tp": int(tp_g), "fp": int(fp_g), "fn": int(fn_g), "tn": int(tn_g),
+}
+# Single-split "CV" row (kept 1-row for structural compatibility with the
+# tabular models' 5-fold DataFrames wherever downstream code averages columns).
+cv_results[GRU_NAME] = pd.DataFrame([{
+    "auc_roc": best_val_auc,
+    "f1": max(f1s_g),
+    "precision": precision_score(yval_g.numpy(), val_prob_final >= gru_threshold, zero_division=0),
+    "recall": recall_score(yval_g.numpy(), val_prob_final >= gru_threshold, zero_division=0),
+    "ap": average_precision_score(yval_g.numpy(), val_prob_final),
+}])
+cv_threshold[GRU_NAME] = gru_threshold
+
+print(f"\n  {GRU_NAME:<22} {test_results[GRU_NAME]['auc_roc']:>8.4f}  "
+      f"F1={test_results[GRU_NAME]['f1']:.4f}  "
+      f"Prec={test_results[GRU_NAME]['precision']:.4f}  "
+      f"Rec={test_results[GRU_NAME]['recall']:.4f}  "
+      f"TP={tp_g} FP={fp_g} FN={fn_g} TN={tn_g}")
+
+OUTLOOK_MODEL = GRU_NAME
 
 # ── 10b. Statistical Significance Tests (DeLong + McNemar) ───────────────────
 print("\n[Significance Tests]  DeLong AUC comparison + McNemar binary prediction test...")
@@ -387,20 +569,28 @@ def mcnemar_test(y_true, y_pred_a, y_pred_b):
 
 
 # Gather probabilities and predictions; persistence has binary "scores"
-model_names_sig = list(test_results.keys())   # 4 ML models
+model_names_sig = list(test_results.keys())   # 4 tabular models + GRU outlook
 all_probs = {name: test_results[name]["y_prob"] for name in model_names_sig}
 all_preds = {name: test_results[name]["y_pred"] for name in model_names_sig}
 # Persistence: binary 0/1 — valid for McNemar; for DeLong treat as prob 0/1
 all_probs["Persistence"] = y_persist.astype(float)
 all_preds["Persistence"] = y_persist.astype(int)
 
-# ── DeLong pairwise comparisons (LR vs each other model/baseline) ─────────────
-lr_prob = all_probs["Logistic Regression"]
+comparison_models = [m for m in ["Random Forest", "XGBoost", "LightGBM", GRU_NAME, "Persistence"]
+                     if m != DEPLOYED_MODEL]
+
+# ── DeLong pairwise comparisons (deployed nowcast model vs everything else) ──
+# Note: comparing the nowcast model against GRU (Outlook) is not quite
+# apples-to-apples — the nowcast model sees the target month's own climate,
+# GRU deliberately does not — but DeLong only needs aligned y_true/y_score
+# arrays, so it's still informative: it quantifies how much predictive value
+# comes from having live contemporaneous data vs. history alone.
+best_prob = all_probs[DEPLOYED_MODEL]
 delong_rows = []
-for comp in ["Random Forest", "XGBoost", "LightGBM", "Persistence"]:
-    z, p, auc_lr, auc_comp, delta = delong_test(y_test, lr_prob, all_probs[comp])
+for comp in comparison_models:
+    z, p, auc_lr, auc_comp, delta = delong_test(y_test, best_prob, all_probs[comp])
     delong_rows.append({
-        "comparison"    : f"LR vs {comp}",
+        "comparison"    : f"{DEPLOYED_MODEL} vs {comp}",
         "auc_LR"        : float(round(auc_lr,   4)),
         "auc_other"     : float(round(auc_comp, 4)),
         "delta_auc"     : float(round(delta,    4)),
@@ -409,15 +599,15 @@ for comp in ["Random Forest", "XGBoost", "LightGBM", "Persistence"]:
         "significant_05": (1 if p < 0.05 else 0)   if not np.isnan(p) else None,
     })
     sig_str = "✓ significant" if (not np.isnan(p) and p < 0.05) else "ns"
-    print(f"  DeLong  LR vs {comp:<18}  ΔAUC={delta:+.4f}  z={z:.2f}  p={p:.4f}  {sig_str}")
+    print(f"  DeLong  {DEPLOYED_MODEL} vs {comp:<18}  ΔAUC={delta:+.4f}  z={z:.2f}  p={p:.4f}  {sig_str}")
 
-# ── McNemar pairwise comparisons (LR vs each other model/baseline) ───────────
-lr_pred = all_preds["Logistic Regression"]
+# ── McNemar pairwise comparisons (deployed nowcast model vs everything else) ─
+best_pred = all_preds[DEPLOYED_MODEL]
 mcnemar_rows = []
-for comp in ["Random Forest", "XGBoost", "LightGBM", "Persistence"]:
-    chi2_s, p_mn, b, c = mcnemar_test(y_test, lr_pred, all_preds[comp])
+for comp in comparison_models:
+    chi2_s, p_mn, b, c = mcnemar_test(y_test, best_pred, all_preds[comp])
     mcnemar_rows.append({
-        "comparison"    : f"LR vs {comp}",
+        "comparison"    : f"{DEPLOYED_MODEL} vs {comp}",
         "b_LR_wins"     : int(b),
         "c_other_wins"  : int(c),
         "chi2_stat"     : float(round(chi2_s, 4)),
@@ -425,7 +615,7 @@ for comp in ["Random Forest", "XGBoost", "LightGBM", "Persistence"]:
         "significant_05": (1 if p_mn < 0.05 else 0),
     })
     sig_str = "✓ significant" if p_mn < 0.05 else "ns"
-    print(f"  McNemar LR vs {comp:<18}  b={b:3d}  c={c:3d}  χ²={chi2_s:.3f}  p={p_mn:.4f}  {sig_str}")
+    print(f"  McNemar {DEPLOYED_MODEL} vs {comp:<18}  b={b:3d}  c={c:3d}  χ²={chi2_s:.3f}  p={p_mn:.4f}  {sig_str}")
 
 print()
 
@@ -455,26 +645,31 @@ for t_sens in [0.20, 0.30, 0.40, 0.50]:
 
 onset_t030 = next(r for r in onset_rows if r["threshold"] == 0.30)
 
-# ── 12. Feature Importance (Logistic Regression) ───────────────────────────────
-lr_clf = best_pipe.named_steps["clf"]
-lr_sc  = best_pipe.named_steps["sc"]
-raw_coef = np.abs(lr_clf.coef_[0])
-norm_imp  = raw_coef / raw_coef.sum()
+# ── 12. Feature Importance (Deployed Model) ─────────────────────────────────
+# Generic across linear (|coef|) and tree-based (feature_importances_) models
+# since DEPLOYED_MODEL is now selected dynamically rather than hardcoded to LR.
+best_clf = best_pipe.named_steps["clf"]
+if hasattr(best_clf, "coef_"):
+    raw_imp = np.abs(best_clf.coef_[0])
+else:
+    raw_imp = best_clf.feature_importances_
+norm_imp  = raw_imp / raw_imp.sum()
 fi_df = pd.DataFrame({
     "feature"   : FEATURES,
     "importance": norm_imp,
 }).sort_values("importance", ascending=False).reset_index(drop=True)
-print("\n[Feature Importance]  Top 5 (normalised |LR coefficient|):")
+print(f"\n[Feature Importance]  Top 5 ({DEPLOYED_MODEL}):")
 for _, row in fi_df.head(5).iterrows():
     print(f"  {row['feature']:<35} {row['importance']:.4f}  ({row['importance']*100:.1f}%)")
 
 # ── 13. Ablation Study ─────────────────────────────────────────────────────────
-STATIC_GEO   = ["wetland_fraction", "elevation_m", "slope_deg"]
 feature_sets = {
-    "Full (15 features)"  : FEATURES,
-    "No temporal lag"     : [f for f in FEATURES if f != "flood_prev_month"],
-    "Climate only"        : [f for f in FEATURES
-                              if f not in ["flood_prev_month"] + STATIC_GEO],
+    f"Full ({len(FEATURES)} features)"        : FEATURES,
+    "No new lag/rolling features (orig. 15)"  : [f for f in FEATURES if f not in LAG_FEATURES],
+    "No temporal signal at all"               : [f for f in FEATURES
+                                                  if f != "flood_prev_month" and f not in LAG_FEATURES],
+    "Climate only"                            : [f for f in FEATURES
+                              if f not in ["flood_prev_month"] + LAG_FEATURES + STATIC_GEO],
 }
 print("\n[Ablation]  XGBoost base model (SMOTE, 5-fold CV)...")
 abl_rows = []
@@ -485,7 +680,7 @@ for setting, feats in feature_sets.items():
     # Use make_pipelines to ensure identical XGBoost config (reg_alpha, reg_lambda)
     pipe_a = make_pipelines(scale_pos)["XGBoost"]
 
-    folds_a, t_abl = run_cv(pipe_a, X_tr_a, y_train, tscv)
+    folds_a, t_abl = run_cv(pipe_a, X_tr_a, y_train, fold_indices)
     pipe_a.fit(X_tr_a, y_train)
     yp_te  = pipe_a.predict_proba(X_te_a)[:, 1]
     yp_pred = (yp_te >= t_abl).astype(int)
@@ -620,6 +815,10 @@ PRETTY_LABELS = {
     "rain_wetland"             : "Rain×Wetland",
     "month_sin"                : "Month Sin",
     "month_cos"                : "Month Cos",
+    "rainfall_lag1"            : "Rainfall (t-1)",
+    "rainfall_roll3"           : "Rainfall 3mo Avg",
+    "soil_moisture_roll3"      : "Soil Moist. 3mo Avg",
+    "flood_count_last_12mo"    : "Floods (12mo)",
 }
 cmap = sns.diverging_palette(220, 20, as_cmap=True)
 
@@ -668,7 +867,7 @@ plt.tight_layout()
 savefig("fig06_correlation_10feat.png")
 print("  fig06_correlation_10feat.png")
 
-# ── Fig 07: Correlation Matrix — Full 15-Feature Set ──────────────────────────
+# ── Fig 07: Correlation Matrix — Full Feature Set ─────────────────────────────
 labels = [PRETTY_LABELS[f] for f in FEATURES]
 corr   = df[FEATURES].corr()
 mask   = np.triu(np.ones_like(corr, dtype=bool))   # upper triangle + diagonal
@@ -679,7 +878,8 @@ sns.heatmap(corr, mask=mask, cmap=cmap, vmin=-1, vmax=1, center=0,
             xticklabels=labels, yticklabels=labels,
             annot=True, fmt=".2f", annot_kws={"size": 7},
             cbar_kws={"shrink": 0.8})
-ax.set_title("Pearson Correlation — Full 15-Feature Set (10 Raw + 5 Engineered) + Flood Target",
+ax.set_title(f"Pearson Correlation — Full {len(FEATURES)}-Feature Set "
+             f"(10 Raw + 5 Engineered + {len(LAG_FEATURES)} Lag/Rolling) + Flood Target",
              fontsize=13, fontweight="bold", pad=12)
 plt.xticks(rotation=45, ha="right", fontsize=8)
 plt.yticks(rotation=0, fontsize=8)
@@ -755,7 +955,8 @@ savefig("fig10_roc_pr_curves.png")
 print("  fig10_roc_pr_curves.png")
 
 # ── Fig 8: Confusion Matrices ─────────────────────────────────────────────────
-fig, axes = plt.subplots(1, 4, figsize=(18, 4.5))
+n_models_cm = len(test_results)
+fig, axes = plt.subplots(1, n_models_cm, figsize=(4.5 * n_models_cm, 4.5))
 for ax, (name, res) in zip(axes, test_results.items()):
     cm = confusion_matrix(y_test, res["y_pred"])
     ConfusionMatrixDisplay(cm, display_labels=["No Flood", "Flood"]).plot(
@@ -843,12 +1044,18 @@ savefig("fig12_ablation_study.png")
 print("  fig12_ablation_study.png")
 
 # ── Fig 5: CV Stability ───────────────────────────────────────────────────────
+# GRU (Outlook) uses a single held-out validation split, not N_CV folds (see
+# section 10a), so it gets a single point marker instead of a per-fold line.
 fig, axes = plt.subplots(1, 2, figsize=(13, 5))
 for (name, fdf), color in zip(cv_results.items(), MODEL_COLORS):
-    axes[0].plot(range(1, N_CV+1), fdf["auc_roc"], marker="o", linewidth=2,
-                 markersize=7, color=color, label=name, alpha=0.85)
+    if len(fdf) == N_CV:
+        axes[0].plot(range(1, N_CV+1), fdf["auc_roc"], marker="o", linewidth=2,
+                     markersize=7, color=color, label=name, alpha=0.85)
+    else:
+        axes[0].axhline(fdf["auc_roc"].iloc[0], color=color, linestyle="--",
+                         linewidth=1.5, alpha=0.85, label=f"{name} (single split)")
 axes[0].set(xlabel="CV Fold", ylabel="AUC-ROC",
-            title="AUC-ROC per Fold (5-fold TimeSeriesSplit)")
+            title="AUC-ROC per Fold (5-fold panel-aware CV)")
 axes[0].set_xticks(range(1, N_CV+1))
 axes[0].legend(fontsize=9)
 axes[0].set_ylim(0.5, 1.05)
@@ -858,7 +1065,7 @@ bp = axes[1].boxplot(aucs_data, patch_artist=True, medianprops={"color": "black"
 for patch, color in zip(bp["boxes"], MODEL_COLORS):
     patch.set_facecolor(color); patch.set_alpha(0.7)
 axes[1].set_xticklabels(model_names, fontsize=9)
-axes[1].set(ylabel="AUC-ROC Distribution", title="AUC-ROC Boxplot across 5 Folds")
+axes[1].set(ylabel="AUC-ROC Distribution", title="AUC-ROC across CV (GRU: single split)")
 axes[1].set_ylim(0.5, 1.05)
 
 fig.suptitle("Cross-Validation Stability",
@@ -893,12 +1100,12 @@ ops = [
      "prec": prec_p, "rec": rec_p, "f1": f1_p,
      "tp": int(tp_p), "fp": int(fp_p), "fn": int(fn_p),
      "color": "#95A5A6"},
-    {"label": f"LR F1-optimal\n(t={best['threshold']:.3f})",
+    {"label": f"{DEPLOYED_MODEL}\nF1-optimal (t={best['threshold']:.3f})",
      "auc": best["auc_roc"], "ap": best["ap"],
      "prec": best["precision"], "rec": best["recall"], "f1": best["f1"],
      "tp": best["tp"], "fp": best["fp"], "fn": best["fn"],
      "color": "#2980B9"},
-    {"label": "LR Onset-sensitive\n(t=0.30)",
+    {"label": f"{DEPLOYED_MODEL}\nOnset-sensitive (t=0.30)",
      "auc": best["auc_roc"], "ap": best["ap"],
      "prec": lr_onset["precision"], "rec": lr_onset["recall"],
      "f1": lr_onset["f1"],
@@ -948,7 +1155,7 @@ axes[1].set_ylabel("Count (positive = detected, negative = missed/FP)")
 axes[1].set_title("(B) Flood Detection Breakdown")
 axes[1].legend(fontsize=8)
 
-fig.suptitle("Persistence Baseline vs LR Model: Operating Points",
+fig.suptitle(f"Persistence Baseline vs {DEPLOYED_MODEL}: Operating Points",
              fontsize=13, fontweight="bold")
 plt.tight_layout()
 savefig("fig15_baseline_comparison.png")
@@ -975,13 +1182,21 @@ print()
 # ── 15. Metadata ───────────────────────────────────────────────────────────────
 print("[Artifacts]  Saving model and metadata...")
 
+def _safe_std(series):
+    # std() of a single-row series (e.g. GRU's single validation split) is
+    # NaN, which isn't valid JSON — 0.0 is the correct "no variance observed"
+    # value here, not a missing-data sentinel.
+    v = float(series.std())
+    return 0.0 if np.isnan(v) else round(v, 6)
+
+
 cv_meta = {}
 for name, fdf in cv_results.items():
     cv_meta[name] = {
         "auc_roc_mean": round(float(fdf["auc_roc"].mean()), 6),
-        "auc_roc_std" : round(float(fdf["auc_roc"].std()),  6),
+        "auc_roc_std" : _safe_std(fdf["auc_roc"]),
         "f1_mean"     : round(float(fdf["f1"].mean()),      6),
-        "f1_std"      : round(float(fdf["f1"].std()),       6),
+        "f1_std"      : _safe_std(fdf["f1"]),
     }
 
 test_meta = {}
@@ -1002,13 +1217,19 @@ for name, r in test_results.items():
 
 meta = {
     "best_model_name"  : DEPLOYED_MODEL,
+    "outlook_model_name": OUTLOOK_MODEL,
     "features"         : FEATURES,
     "threshold"        : round(best["threshold"], 4),
     "model_selection_criterion": (
-        "Logistic Regression selected on CV precision "
-        "(highest among all models). Confirmed on test set but not tuned there. "
-        "Operational justification: humanitarian EWS — false alarms erode "
-        "institutional trust and waste limited resources."
+        f"{DEPLOYED_MODEL} selected on CV precision (highest among the 4 "
+        "contemporaneous-input 'nowcast' models — this is computed from "
+        "actual CV results, not hardcoded). Confirmed on test set but not "
+        "tuned there. Operational justification: humanitarian EWS — false "
+        "alarms erode institutional trust and waste limited resources. "
+        f"{OUTLOOK_MODEL} is evaluated separately (see 'outlook_model_name') "
+        "since it answers a different question — a genuine month-ahead "
+        "forecast using only pre-target-month history, deployed alongside "
+        "the nowcast model rather than competing for the same slot."
     ),
     "excluded_features": ["water_fraction"],
     "exclusion_reason" : (
@@ -1023,15 +1244,35 @@ meta = {
         "rain_wetland" : "rainfall_mm × wetland_fraction",
         "month_sin"    : "sin(2π × month / 12)",
         "month_cos"    : "cos(2π × month / 12)",
+        "rainfall_lag1": "rainfall_mm, previous month (per county)",
+        "rainfall_roll3": "trailing 3-month mean rainfall_mm (per county, excludes current month)",
+        "soil_moisture_roll3": "trailing 3-month mean soil_moisture_mm (per county, excludes current month)",
+        "flood_count_last_12mo": "count of flood months in trailing 12 months (per county, excludes current month)",
     },
+    "nowcast_vs_outlook": (
+        "Two complementary models are deployed. The NOWCAST model "
+        f"({DEPLOYED_MODEL}) predicts the current month's flood probability "
+        "using that month's own climate inputs — in production these can be "
+        "live daily data aggregated month-to-date, updating as the month "
+        "progresses, rather than a value frozen at training time. The "
+        f"OUTLOOK model ({OUTLOOK_MODEL}) predicts next month's flood "
+        f"probability using only the {SEQ_LEN} months strictly before the "
+        "target month — no contemporaneous data — a genuine forecast. "
+        "Neither model is trained on daily-resolution flood labels; none "
+        "exist in the source data (flood is recorded at monthly granularity)."
+    ),
     "methodology": {
-        "cv"         : f"{N_CV}-fold TimeSeriesSplit on 2011–2023 training data",
+        "cv"         : f"{N_CV}-fold panel-aware CV (split on calendar month, not pooled rows) on 2011–2023 training data",
         "test"       : "2024–2025 held out — never seen during training or tuning",
-        "imbalance"  : "SMOTE (k=5) inside CV pipeline + class_weight='balanced'",
+        "imbalance"  : "SMOTE (k=5) inside CV pipeline + class_weight='balanced' (GRU: BCE pos_weight)",
         "imputation" : "SimpleImputer(median) inside pipeline, fit on training folds only",
         "threshold"  : (
             "F1-maximising threshold per CV fold (grid: 0.05–0.95, step 0.005), "
-            "mean across folds — applied once to test set."
+            "mean across folds — applied once to test set. GRU uses a single "
+            "held-out validation split (last 12 training months) instead of "
+            "5-fold CV, for compute-time reasons; final test evaluation uses "
+            "the identical held-out 2024-2025 set and bootstrap CI/DeLong/"
+            "McNemar machinery as the other models."
         ),
         "bootstrap_ci": f"{N_BOOT} iterations, 95% percentile CI",
     },
@@ -1074,9 +1315,31 @@ with open(f"{OUTPUT_DIR}/metadata.json", "w") as f:
 print("  metadata.json")
 
 # ── 16. Save Model ─────────────────────────────────────────────────────────────
+# Force the deployed classifier to single-threaded prediction: LightGBM/
+# XGBoost's own OpenMP thread pool segfaults when it coexists in the same
+# process as PyTorch's OpenMP runtime (observed on macOS — the app loads both
+# the nowcast pipeline and the GRU outlook model together). A single input
+# row gains nothing from parallel prediction anyway, so this costs nothing.
+if hasattr(best_pipe.named_steps["clf"], "n_jobs"):
+    best_pipe.named_steps["clf"].set_params(n_jobs=1)
+
+# best_model.pkl is a bundle: the tabular "nowcast" pipeline plus the GRU
+# "outlook" model (state_dict + normalisation stats, since nn.Module isn't
+# meaningfully picklable across environments the same way a sklearn Pipeline
+# is). app.py loads both roles from this one file.
+outlook_bundle = {
+    "state_dict"      : gru_model.state_dict(),
+    "seq_features"    : SEQ_FEATURES,
+    "static_features" : STATIC_FEATURES_SEQ,
+    "seq_len"         : SEQ_LEN,
+    "hidden"          : gru_model.hidden,
+    "seq_mean"        : seq_mean, "seq_std": seq_std,
+    "static_mean"     : static_mean, "static_std": static_std,
+    "threshold"       : gru_threshold,
+}
 with open(f"{OUTPUT_DIR}/best_model.pkl", "wb") as f:
-    pickle.dump(best_pipe, f)
-print("  best_model.pkl")
+    pickle.dump({"nowcast_model": best_pipe, "outlook_model": outlook_bundle}, f)
+print("  best_model.pkl  (nowcast_model + outlook_model bundle)")
 
 # ── 17. Support Files ──────────────────────────────────────────────────────────
 with open(f"{OUTPUT_DIR}/counties.json", "w") as f:
@@ -1093,7 +1356,7 @@ df_s[["county","year","month","flood"]].to_csv(
 with open(f"{OUTPUT_DIR}/feature_stats.json", "w") as f:
     json.dump(df[FEATURES].describe().round(4).to_dict(), f, indent=2)
 
-# County defaults for Streamlit app (median values per county)
+# County defaults served by the API (median values per county)
 county_defaults = {}
 for county, grp in df.groupby("county"):
     county_defaults[county] = {
