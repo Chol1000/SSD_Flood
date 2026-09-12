@@ -12,7 +12,6 @@ pinned: false
 
 > **Author:** Chol Atem Giet Monykuch · [c.monykuch@alustudent.com](mailto:c.monykuch@alustudent.com) · African Leadership University  
 > **Model:** Logistic Regression · AUC-ROC = 0.9601 (95% CI: 0.935–0.982) · F1 = 0.7581 · Precision = 0.7705 · Recall = 0.7460  
-> **Live App:** [https://huggingface.co/spaces/Chol1000/SSD_Flood](https://huggingface.co/spaces/Chol1000/SSD_Flood)  
 > **Source Code:** [https://github.com/Chol1000/SSD_Flood](https://github.com/Chol1000/SSD_Flood)
 
 ---
@@ -25,11 +24,9 @@ This project presents the **first machine learning flood prediction framework co
 
 ---
 
-## Live Demo
+## The Application
 
-**[https://huggingface.co/spaces/Chol1000/SSD_Flood](https://huggingface.co/spaces/Chol1000/SSD_Flood)**
-
-The deployed early warning system is a React dashboard (Ant Design) backed by a FastAPI service:
+The early warning system is a React dashboard (Ant Design) backed by a FastAPI service:
 
 | Page | What it does |
 |---|---|
