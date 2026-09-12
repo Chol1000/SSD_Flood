@@ -1,5 +1,6 @@
-# Single-container build for Hugging Face Spaces (Docker SDK):
-# stage 1 builds the React dashboard, stage 2 serves it + the API with FastAPI.
+# Single-container build: stage 1 builds the React dashboard, stage 2 serves
+# it and the API from one FastAPI process. Runs unchanged on Render, Cloud Run
+# and Hugging Face Spaces.
 
 FROM node:20-slim AS frontend-build
 WORKDIR /app/frontend
@@ -34,6 +35,8 @@ COPY --from=frontend-build /app/frontend/dist frontend/dist
 RUN chown -R appuser:appuser /app
 USER appuser
 
-# 7860 is the port Spaces expects (see app_port in README.md's frontmatter).
+# Hosts disagree on which port to serve: Render and Cloud Run inject $PORT,
+# while Spaces expects the app_port from README.md's frontmatter. Honour $PORT
+# when it is set and fall back to 7860, so the same image runs on any of them.
 EXPOSE 7860
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "7860"]
+CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-7860}"]

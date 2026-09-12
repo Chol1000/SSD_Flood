@@ -1,0 +1,22 @@
+# Render blueprint — deploys the Dockerfile as a single web service that
+# serves both the React dashboard and the API.
+#
+# Measured peak memory for the heaviest path (79-county scan + 48-month GRU
+# rollout + national PDF) is ~440MB against the free plan's 512MB, so this
+# fits with limited headroom. If the service starts getting OOM-killed under
+# real traffic, the fix is `plan: starter` rather than trimming features.
+services:
+  - type: web
+    name: ssd-flood
+    env: docker
+    plan: free
+    region: frankfurt # closest of Render's regions to South Sudan
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    autoDeploy: true # redeploy on every push to the default branch
+    envVars:
+      # Set this in the Render dashboard, not here — it is a secret. Without it
+      # everything works except the 5-day forecast on Live Updates.
+      - key: OPENWEATHER_API_KEY
+        sync: false
