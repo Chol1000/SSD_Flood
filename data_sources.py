@@ -91,6 +91,15 @@ def fetch_open_meteo_daily(lat: float, lon: float, past_days: int = 92) -> pd.Da
     else:
         raise last_exc
 
+    result_df = _parse_open_meteo_daily(data)
+    _cache[cache_key] = (time.monotonic(), result_df)
+    return result_df
+
+
+def _parse_open_meteo_daily(data: dict) -> pd.DataFrame:
+    """Shape one Open-Meteo response into the daily frame the model expects.
+    Shared by the single-coordinate fetch and the batched prefetch so the two
+    can never drift apart on units or column names."""
     daily = pd.DataFrame({
         "date": pd.to_datetime(data["daily"]["time"]),
         "rainfall_mm": data["daily"]["precipitation_sum"],
@@ -114,9 +123,57 @@ def fetch_open_meteo_daily(lat: float, lon: float, past_days: int = 92) -> pd.Da
     # to a comparable range (assumes ~700mm effective root-zone depth), not an
     # exact unit match — documented as a known limitation, not silently hidden.
     daily["soil_moisture_mm"] = daily["soil_moisture_frac"] * 700
-    result_df = daily.drop(columns=["soil_moisture_frac"]).dropna(subset=["rainfall_mm"])
-    _cache[cache_key] = (time.monotonic(), result_df)
-    return result_df
+    return daily.drop(columns=["soil_moisture_frac"]).dropna(subset=["rainfall_mm"])
+
+
+def prefetch_open_meteo_batch(coords, past_days: int = 92) -> int:
+    """Fetch every coordinate in ONE request and seed the per-coordinate cache.
+
+    Open-Meteo accepts comma-separated latitude/longitude lists and answers
+    with an array in the same order. Refreshing 79 counties as 79 separate
+    requests is what trips its rate limiter (HTTP 429) on a shared outbound IP
+    like a PaaS host's, leaving every county on historical medians. One request
+    for all of them stays comfortably inside the limit.
+
+    Results are written into the same `_cache` that fetch_open_meteo_daily
+    reads, so callers need no changes — their per-county calls simply hit a
+    warm cache. Returns how many coordinates were cached; the caller can fall
+    back to per-county fetching for whatever is missing.
+    """
+    coords = list(coords)
+    if not coords:
+        return 0
+
+    params = {
+        "latitude": ",".join(str(lat) for lat, _ in coords),
+        "longitude": ",".join(str(lon) for _, lon in coords),
+        "daily": "precipitation_sum,temperature_2m_max,temperature_2m_min",
+        "hourly": "soil_moisture_0_to_7cm,vapour_pressure_deficit",
+        "past_days": past_days,
+        "forecast_days": 1,
+        "timezone": "auto",
+    }
+    url = OPEN_METEO_URL
+    if OPEN_METEO_API_KEY:
+        url = OPEN_METEO_CUSTOMER_URL
+        params["apikey"] = OPEN_METEO_API_KEY
+
+    resp = requests.get(url, params=params, timeout=REQUEST_TIMEOUT * 3)
+    resp.raise_for_status()
+    rows = resp.json()
+    if isinstance(rows, dict):  # a single coordinate comes back unwrapped
+        rows = [rows]
+
+    now = time.monotonic()
+    cached = 0
+    for (lat, lon), row in zip(coords, rows):
+        try:
+            df = _parse_open_meteo_daily(row)
+        except (KeyError, TypeError, ValueError):
+            continue  # one malformed entry shouldn't void the whole batch
+        _cache[(round(lat, 3), round(lon, 3), past_days)] = (now, df)
+        cached += 1
+    return cached
 
 
 def fetch_nasa_power_daily(lat: float, lon: float, past_days: int = 92) -> pd.DataFrame:

@@ -54,6 +54,20 @@ _live_cache_updated_at: Optional[float] = None
 
 def _refresh_live_cache_once():
     art = _artifacts()
+
+    # Seed every county from ONE upstream request first. Without this the loop
+    # below issues 79 separate Open-Meteo calls, which trips its rate limiter
+    # (HTTP 429) whenever the outbound IP is shared with other tenants, as it
+    # is on a PaaS host — and a rate-limited refresh silently leaves the whole
+    # country on historical medians instead of live climate. A failure here is
+    # not fatal: the per-county path below still runs, just unwarmed.
+    try:
+        coords = [COUNTY_COORDS[c] for c in art["counties"] if c in COUNTY_COORDS]
+        cached = data_sources.prefetch_open_meteo_batch(coords, past_days=92)
+        print(f"[live-refresh] warmed {cached}/{len(coords)} counties in one request")
+    except Exception as exc:
+        print(f"[live-refresh] batch prefetch failed, falling back per-county: {exc}")
+
     with ThreadPoolExecutor(max_workers=5) as pool:  # gentle — this runs unattended, no rush
         def _fetch(c):
             return c, data_sources.get_live_county_inputs(c, COUNTY_COORDS, art["county_defaults"], full_history=True)
@@ -874,7 +888,7 @@ if FRONTEND_DIST.exists():
         if _dir.is_dir():
             app.mount(f"/{_extra}", StaticFiles(directory=str(_dir)), name=_extra)
 
-    @app.get("/{full_path:path}", include_in_schema=False)
+    @app.api_route("/{full_path:path}", methods=["GET", "HEAD"], include_in_schema=False)
     def spa_fallback(full_path: str):
         """Hand any non-API path to the React app.
 
