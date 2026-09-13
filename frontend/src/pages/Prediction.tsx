@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import {
   Card, Row, Col, Select, Switch, Checkbox, Typography, Space, Button, Modal, Tag, Skeleton, Empty, Divider,
+  Badge, Alert,
 } from "antd";
 import { ArrowRightOutlined, ExperimentOutlined } from "@ant-design/icons";
 import {
@@ -325,25 +326,34 @@ export default function Prediction() {
               )
             }
           >
-            {useLive && (
-              <div
-                style={{
-                  fontSize: 12,
-                  padding: "8px 12px",
-                  borderRadius: 6,
-                  marginBottom: 14,
-                  lineHeight: 1.5,
-                  overflowWrap: "break-word",
-                  color: live?.live_data_available ? colors.Low : colors.High,
-                  background: `${live?.live_data_available ? colors.Low : colors.High}14`,
-                  border: `1px solid ${live?.live_data_available ? colors.Low : colors.High}40`,
-                }}
-              >
-                {live?.live_data_available
-                  ? `Live as of ${live.last_updated}${live.source === "nasa-power" ? " (via NASA POWER — Open-Meteo unavailable)" : ""}`
-                  : (live?.error ?? "Fetching live data…")}
-              </div>
-            )}
+            {/* Data-freshness line, deliberately NOT on the risk palette. This
+                says when the inputs were read, not how dangerous anything is —
+                colouring it green/red put a second severity-looking bar right
+                above a gauge that already reads CRITICAL in red, so the card
+                showed two coloured bars meaning entirely different things. A
+                quiet caption keeps the risk colours meaning risk alone.
+                The one case that genuinely changes how to read the number —
+                no live data at all, so the model is running on historical
+                medians — still gets a real warning. */}
+            {useLive &&
+              (live?.live_data_available ? (
+                <div style={{ marginBottom: 14 }}>
+                  <Space size={6} align="start">
+                    <Badge status="success" />
+                    <Text type="secondary" style={{ fontSize: 12, lineHeight: 1.5 }}>
+                      Climate inputs live as of <b>{live.last_updated}</b>
+                      {live.source === "nasa-power" && " · via NASA POWER (Open-Meteo unavailable)"}
+                    </Text>
+                  </Space>
+                </div>
+              ) : (
+                <Alert
+                  type="warning"
+                  showIcon
+                  style={{ marginBottom: 14 }}
+                  message={live?.error ?? "Fetching live climate data…"}
+                />
+              ))}
 
             <Space align="center" size={16} wrap>
               <Gauge probability={prediction?.probability ?? 0} tier={prediction?.risk_tier ?? "Low"} size={150} />
