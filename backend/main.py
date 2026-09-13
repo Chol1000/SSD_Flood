@@ -21,9 +21,18 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 from typing import Optional
 
+import warnings
+
 import numpy as np
 import pandas as pd
 import requests
+
+warnings.filterwarnings(
+    "ignore",
+    message="X does not have valid feature names",
+    category=UserWarning,
+    module="sklearn",
+)
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -326,6 +335,23 @@ def _artifacts():
     meta, counties, fstats, county_defaults, county_climate_percentiles, hist_df, monthly_df = data_access.load_artifacts(
         str(REPO_ROOT / "model")
     )
+
+    # run_prediction builds its input positionally from meta["features"], so a
+    # mismatch between that list and the width the pipeline was fitted on would
+    # feed every value into the wrong column — and still return a confident,
+    # entirely wrong probability rather than raising. sklearn cannot catch this
+    # for us: the pipeline's imputer was fitted on a bare array, so LightGBM
+    # only ever saw positional placeholders ("Column_0"..) and has no real
+    # names to validate against. Check the one thing that is checkable, once at
+    # load, and fail loudly instead of predicting nonsense.
+    expected = getattr(nowcast_model, "n_features_in_", None)
+    if expected is not None and expected != len(meta["features"]):
+        raise RuntimeError(
+            f"Model/metadata mismatch: pipeline expects {expected} features, "
+            f"metadata lists {len(meta['features'])}. Refusing to serve predictions "
+            "that would be silently misaligned — retrain or restore a matching model."
+        )
+
     return {
         "nowcast_model": nowcast_model,
         "outlook_bundle": outlook_bundle,
