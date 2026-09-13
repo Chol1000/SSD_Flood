@@ -32,7 +32,11 @@ export default function DocPage({
   const showToc = !!screens.lg;
 
   return (
-    <Row gutter={[32, 0]} style={{ maxWidth: 1240 }}>
+    // The gutter only separates the article from the TOC, so it is dropped
+    // when the TOC is hidden. AntD implements a gutter as a negative margin on
+    // the Row (-16px here), which below `lg` exceeds the Content's own 12px
+    // side padding and pushes the page 4px past the viewport.
+    <Row gutter={showToc ? [32, 0] : [0, 0]} style={{ maxWidth: 1240 }}>
       <Col xs={24} lg={showToc ? 16 : 24} xl={17}>
         <PageHeader eyebrow={eyebrow} title={title} />
         <Card styles={{ body: { padding: "28px 32px 40px" } }}>{children}</Card>

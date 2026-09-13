@@ -82,6 +82,7 @@ export default function Reports() {
           dataSource={visible}
           rowKey="county"
           size="middle"
+          scroll={{ x: "max-content" }}
           pagination={{ pageSize: 12, showSizeChanger: false, hideOnSinglePage: true }}
           locale={{ emptyText: `No counties match "${search}".` }}
           columns={[

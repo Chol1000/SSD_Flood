@@ -358,7 +358,7 @@ export default function Historical() {
               rowKey="county"
               size="small"
               pagination={false}
-              scroll={{ y: 300 }}
+              scroll={{ x: "max-content", y: 300 }}
               locale={{ emptyText: "No counties selected." }}
               columns={[
                 { title: "County", dataIndex: "county", render: (c: string) => <Text strong>{c}</Text> },

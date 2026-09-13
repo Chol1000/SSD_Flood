@@ -230,6 +230,7 @@ export default function ModelScience() {
               rowKey="Feature Set"
               size="small"
               pagination={false}
+              scroll={{ x: "max-content" }}
               columns={[
                 { title: "Feature Set", dataIndex: "Feature Set" },
                 {
@@ -291,6 +292,7 @@ export default function ModelScience() {
               ]}
               size="small"
               pagination={false}
+              scroll={{ x: "max-content" }}
               columns={[
                 {
                   title: "",
@@ -340,6 +342,7 @@ export default function ModelScience() {
               rowKey="comparison"
               size="small"
               pagination={false}
+              scroll={{ x: "max-content" }}
               style={{ marginTop: 10 }}
               columns={[
                 { title: "Comparison", dataIndex: "comparison" },
@@ -383,6 +386,7 @@ export default function ModelScience() {
               rowKey="threshold"
               size="small"
               pagination={false}
+              scroll={{ x: "max-content" }}
               columns={[
                 {
                   title: "Threshold",
@@ -435,6 +439,7 @@ export default function ModelScience() {
               rowKey="comparison"
               size="small"
               pagination={false}
+              scroll={{ x: "max-content" }}
               style={{ marginTop: 10 }}
               columns={[
                 { title: "Comparison", dataIndex: "comparison" },
@@ -490,7 +495,7 @@ export default function ModelScience() {
               }))}
               size="small"
               pagination={false}
-              scroll={{ y: 300 }}
+              scroll={{ x: "max-content", y: 300 }}
               columns={[
                 {
                   title: "#",

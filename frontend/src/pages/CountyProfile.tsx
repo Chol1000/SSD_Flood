@@ -381,6 +381,7 @@ export default function CountyProfile() {
               rowKey="county"
               size="small"
               pagination={false}
+              scroll={{ x: "max-content" }}
               columns={[
                 {
                   title: "County",

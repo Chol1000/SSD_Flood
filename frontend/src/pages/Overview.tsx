@@ -559,6 +559,7 @@ export default function Overview() {
           dataSource={rows}
           rowKey="county"
           size="middle"
+          scroll={{ x: "max-content" }}
           pagination={{ pageSize: 15, showSizeChanger: false, hideOnSinglePage: true }}
           columns={[
             {

@@ -781,12 +781,20 @@ export default function LiveCenter() {
                         {detail.description}
                       </Text>
                     </div>
-                    <Space size={24} wrap style={{ marginInlineStart: "auto" }}>
-                      <Stat label="Feels Like" value={`${detail.feels_like_c.toFixed(1)}°C`} />
-                      <Stat label="Humidity" value={`${detail.humidity_pct}%`} />
-                      <Stat label="Wind" value={`${detail.wind_speed_ms.toFixed(1)} m/s`} />
-                      <Stat label="Pressure" value={`${detail.pressure_hpa} hPa`} />
-                    </Space>
+                    <Row gutter={[16, 12]} style={{ flex: 1, minWidth: 220 }}>
+                      {(
+                        [
+                          ["Feels Like", `${detail.feels_like_c.toFixed(1)}°C`],
+                          ["Humidity", `${detail.humidity_pct}%`],
+                          ["Wind", `${detail.wind_speed_ms.toFixed(1)} m/s`],
+                          ["Pressure", `${detail.pressure_hpa} hPa`],
+                        ] as [string, string][]
+                      ).map(([label, value]) => (
+                        <Col key={label} xs={12} md={6}>
+                          <Stat label={label} value={value} />
+                        </Col>
+                      ))}
+                    </Row>
                   </>
                 ) : (
                   selLatest && (
@@ -803,10 +811,14 @@ export default function LiveCenter() {
                           {selLatest.description}
                         </Text>
                       </div>
-                      <Space size={24} wrap style={{ marginInlineStart: "auto" }}>
-                        <Stat label="Humidity" value={`${selLatest.humidity}%`} />
-                        <Stat label="Wind" value={`${selLatest.wind.toFixed(1)} m/s`} />
-                      </Space>
+                      <Row gutter={[16, 12]} style={{ flex: 1, minWidth: 180 }}>
+                        <Col xs={12} md={6}>
+                          <Stat label="Humidity" value={`${selLatest.humidity}%`} />
+                        </Col>
+                        <Col xs={12} md={6}>
+                          <Stat label="Wind" value={`${selLatest.wind.toFixed(1)} m/s`} />
+                        </Col>
+                      </Row>
                     </>
                   )
                 )}
@@ -863,7 +875,7 @@ export default function LiveCenter() {
                 <>
                   <Row gutter={[10, 10]} style={{ marginBottom: 20 }}>
                     {detail.daily.map((d, i) => (
-                      <Col key={d.day_key} flex="1 1 110px">
+                      <Col key={d.day_key} xs={12} sm={12} md={8} lg={4}>
                         <Card
                           hoverable
                           size="small"
@@ -1311,7 +1323,10 @@ function FeaturedWeatherCard({
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ textAlign: "right" }}>
+    // Left-aligned: these sit in a wrapping grid now, not flush against the
+    // card's right edge, so right-aligning them detaches each value from its
+    // own label once the row wraps.
+    <div>
       <Text type="secondary" style={{ fontSize: 10, letterSpacing: "0.04em", display: "block" }}>
         {label.toUpperCase()}
       </Text>

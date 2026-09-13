@@ -106,11 +106,17 @@ export default function WeatherPanel({ county }: { county: string }) {
           </Space>
         </Col>
         <Col xs={24} md={14}>
-          <Space size={28} wrap>
-            <Metric label="FEELS LIKE" value={`${weather.feels_like_c.toFixed(1)}°C`} />
-            <Metric label="HUMIDITY" value={`${weather.humidity_pct}%`} />
-            <Metric label="WIND" value={`${weather.wind_speed_ms.toFixed(1)} m/s`} />
-          </Space>
+          <Row gutter={[16, 12]}>
+            <Col xs={12} sm={8}>
+              <Metric label="FEELS LIKE" value={`${weather.feels_like_c.toFixed(1)}°C`} />
+            </Col>
+            <Col xs={12} sm={8}>
+              <Metric label="HUMIDITY" value={`${weather.humidity_pct}%`} />
+            </Col>
+            <Col xs={12} sm={8}>
+              <Metric label="WIND" value={`${weather.wind_speed_ms.toFixed(1)} m/s`} />
+            </Col>
+          </Row>
         </Col>
       </Row>
 

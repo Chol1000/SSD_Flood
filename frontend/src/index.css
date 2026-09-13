@@ -278,6 +278,28 @@ body {
     max-width: calc(100vw - 24px);
     margin: 0 auto;
   }
+
+  /* Card headers put the title and its control (a search box, a Segmented, a
+     year Select) on one row. Below this width there is not enough room for
+     both, so the title wraps mid-phrase ("All / Counties") while the control
+     is squeezed. Stack them instead and let the control span the full width. */
+  .ant-card-head-wrapper {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .ant-card-head-title {
+    white-space: normal;
+  }
+  .ant-card-extra {
+    margin-inline-start: 0 !important;
+    width: 100%;
+  }
+  .ant-card-extra > .ant-input-affix-wrapper,
+  .ant-card-extra > .ant-input,
+  .ant-card-extra > .ant-select {
+    width: 100% !important;
+  }
   /* Opt-out of the blanket stacking rule for narrow in-card mini-stat trios
      (already evenly split and short); stacking those wastes card height for
      no readability gain. */
